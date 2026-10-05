@@ -1,3 +1,0 @@
-Build Command
-
-g++ main.cpp -o main
