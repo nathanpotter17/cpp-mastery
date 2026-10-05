@@ -28,7 +28,9 @@ case "$OS" in
 esac
 
 mapfile -t lectures < <(
-  for main in lecture_*/main.cpp; do dirname "$main"; done | sort -V
+  for main in lecture_*/main.cpp lecture_*/src/main.cpp; do
+    [[ -f "$main" ]] && echo "${main%%/*}"
+  done | sort -uV
 )
 
 echo

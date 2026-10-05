@@ -8,7 +8,8 @@
 
 ## Requirements
 
-Ubuntu Linux tested - g++ 14 or newer, and Clang 17 or newer.
+- Ubuntu Linux or Windows 11
+- CMake v3.5+, g++ 14+, and Clang 17+.
 
 ## Build System
 

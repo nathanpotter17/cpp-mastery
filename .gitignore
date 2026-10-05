@@ -1,2 +1,4 @@
 build/
 lecture_*/build/
+lecture_*/vendor/
+lecture_*/src/includes/
