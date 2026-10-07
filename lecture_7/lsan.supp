@@ -1,6 +1,6 @@
 # LeakSanitizer suppressions, picked up by the *-ub build scripts.
-# On Wayland, GLFW loads libdecor for window decorations, and its GTK plugin
+# On Wayland, SDL loads libdecor for window decorations, and its GTK plugin
 # brings in fontconfig/pango and dbus, which keep allocations until exit.
-# None of these stacks pass through our code or GLFW.
+# None of these stacks pass through our code or SDL.
 leak:libfontconfig.so
 leak:libdbus-1.so

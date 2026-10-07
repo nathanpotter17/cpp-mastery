@@ -1,0 +1,3 @@
+# clangd reads compile flags from the clang debug build (build-debug-clang.bash).
+CompileFlags:
+  CompilationDatabase: build/debug-clang

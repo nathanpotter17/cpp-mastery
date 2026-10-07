@@ -1,24 +1,154 @@
-#include "includes/glfw.h"
+#include "includes/sdl.h"
+#include "includes/swapchain.h"
 #include "includes/vulkan_setup.h"
 
+#include <array>
+#include <charconv>
 #include <cstdlib>
 #include <exception>
+#include <limits>
 #include <print>
-#include <ranges>
+#include <string_view>
+#include <vector>
 
-int main() {
+namespace {
+
+// How many frames the CPU may record ahead of the GPU.
+constexpr std::size_t frames_in_flight = 2;
+
+constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
+
+// What each in-flight frame needs for itself.
+struct Frame {
+    vk::raii::CommandBuffer commands = nullptr;
+    vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
+    vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
+};
+
+// Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
+void transition(
+    const vk::raii::CommandBuffer& commands,
+    vk::Image image,
+    vk::ImageLayout from,
+    vk::ImageLayout to,
+    vk::PipelineStageFlags2 src_stage,
+    vk::AccessFlags2 src_access,
+    vk::PipelineStageFlags2 dst_stage,
+    vk::AccessFlags2 dst_access
+) {
+    const vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask = src_stage,
+        .srcAccessMask = src_access,
+        .dstStageMask = dst_stage,
+        .dstAccessMask = dst_access,
+        .oldLayout = from,
+        .newLayout = to,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+
+    commands.pipelineBarrier2(vk::DependencyInfo{
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &barrier,
+    });
+}
+
+// Records: swapchain image -> clear to `color` -> ready to present.
+void record_clear(
+    const vk::raii::CommandBuffer& commands,
+    const Swapchain& swapchain,
+    std::uint32_t image_index,
+    std::array<float, 4> color
+) {
+    const vk::Image image = swapchain.images[image_index];
+
+    commands.reset();
+    commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
+    // Undefined: we don't care what was in the image, we're about to clear it.
+    transition(commands, image,
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
+    );
+
+    // loadOp eClear does the clearing when rendering begins.
+    const vk::RenderingAttachmentInfo color_attachment{
+        .imageView = *swapchain.views[image_index],
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
+    };
+
+    commands.beginRendering(vk::RenderingInfo{
+        .renderArea = {.offset = {0, 0}, .extent = swapchain.extent},
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment,
+    });
+
+    // Draw calls go here.
+
+    commands.endRendering();
+
+    transition(commands, image,
+        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
+    );
+
+    commands.end();
+}
+
+// `--frames N` closes the window after N frames (for scripted runs); 0 means never.
+std::uint64_t frame_limit(int argc, char** argv) {
+    std::uint64_t limit = 0;
+
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string_view(argv[i]) == "--frames") {
+            const std::string_view value = argv[i + 1];
+            std::from_chars(value.data(), value.data() + value.size(), limit);
+        }
+    }
+
+    return limit;
+}
+
+// Handles every pending event. False once the window was closed or Escape pressed.
+bool poll_events() {
+    SDL_Event event;
+
+    while (SDL_PollEvent(&event)) {
+        const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
+
+        if (event.type == SDL_EVENT_QUIT || escape) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
     try {
-        GlfwContext glfw;
-        std::println("GLFW {} on {}", glfwGetVersionString(), GlfwContext::platform());
+        SdlContext sdl;
+        const int version = SDL_GetVersion();
+        std::println("SDL {}.{}.{} on {}", SDL_VERSIONNUM_MAJOR(version), SDL_VERSIONNUM_MINOR(version),
+            SDL_VERSIONNUM_MICRO(version), SdlContext::video_driver());
 
         // Loads libvulkan at runtime, so nothing has to link against it.
         vk::raii::Context context;
-        const std::uint32_t loader_version = context.enumerateInstanceVersion();
-        std::println("Vulkan loader {}.{}.{}",
-            vk::apiVersionMajor(loader_version),
-            vk::apiVersionMinor(loader_version),
-            vk::apiVersionPatch(loader_version)
-        );
 
 #ifdef NDEBUG
         const bool validation = false;
@@ -27,43 +157,133 @@ int main() {
 #endif
         std::println("Validation layer {}", validation ? "on" : "off");
 
-        const auto extensions = GlfwContext::required_vulkan_extensions();
-        std::println("GLFW needs {}", extensions);
-
         // Declaration order matters: each object is destroyed before the ones above it.
-        vk::raii::Instance instance = create_instance(context, extensions, validation);
+        // The window comes first: creating it loads Vulkan into SDL, which
+        // required_vulkan_extensions() needs.
+        Window window = make_vulkan_window(800, 600, "lecture_7", true);
+
+        vk::raii::Instance instance = create_instance(context, SdlContext::required_vulkan_extensions(), validation);
         vk::raii::DebugUtilsMessengerEXT messenger = validation
             ? create_debug_messenger(instance)
             : vk::raii::DebugUtilsMessengerEXT(nullptr);
 
-        Window window = make_vulkan_window(800, 600, "lecture_7", false);
         vk::raii::SurfaceKHR surface = create_surface(instance, window.get());
 
         std::println("GPUs:");
         std::optional<GpuChoice> gpu = pick_gpu(instance, surface);
 
         if (!gpu) {
-            std::println(stderr, "No GPU can present to this window");
+            std::println(stderr, "No Vulkan 1.3 GPU can present to this window");
             return EXIT_FAILURE;
         }
 
+        std::println("Using {}", gpu->device.getProperties().deviceName.data());
+
         vk::raii::Device device = create_device(*gpu);
         vk::raii::Queue queue = device.getQueue(gpu->queue_family, 0);
+        Swapchain swapchain = create_swapchain(device, *gpu, surface, window.get());
 
-        const auto formats = gpu->device.getSurfaceFormatsKHR(*surface);
-        const auto present_modes = gpu->device.getSurfacePresentModesKHR(*surface);
-        const auto to_name = [](auto value) { return vk::to_string(value); };
+        // eResetCommandBuffer lets us re-record each frame's command buffer.
+        vk::raii::CommandPool command_pool(device, vk::CommandPoolCreateInfo{
+            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            .queueFamilyIndex = gpu->queue_family,
+        });
 
-        std::println("Using {} (queue family {})", gpu->device.getProperties().deviceName.data(), gpu->queue_family);
-        std::println("  {} surface formats, first is {} / {}",
-            formats.size(),
-            vk::to_string(formats.front().format),
-            vk::to_string(formats.front().colorSpace)
-        );
-        std::println("  present modes {}", present_modes | std::views::transform(to_name));
+        vk::raii::CommandBuffers command_buffers(device, vk::CommandBufferAllocateInfo{
+            .commandPool = *command_pool,
+            .level = vk::CommandBufferLevel::ePrimary,
+            .commandBufferCount = frames_in_flight,
+        });
 
-        queue.waitIdle();
-        std::println("Device and queue ready");
+        std::vector<Frame> frames;
+        for (vk::raii::CommandBuffer& commands : command_buffers) {
+            frames.push_back(Frame{
+                .commands = std::move(commands),
+                .image_acquired = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{}),
+                // Start signalled, so the first wait on each frame returns straight away.
+                .done = vk::raii::Fence(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}),
+            });
+        }
+
+        const std::array black{0.0f, 0.0f, 0.0f, 1.0f};
+        const std::uint64_t limit = frame_limit(argc, argv);
+        std::uint64_t frame_count = 0;
+
+        while (poll_events() && (limit == 0 || frame_count < limit)) {
+            // Minimised: nothing to draw into, so sleep until something happens.
+            int width = 0;
+            int height = 0;
+            SDL_GetWindowSizeInPixels(window.get(), &width, &height);
+
+            if (width == 0 || height == 0 || (SDL_GetWindowFlags(window.get()) & SDL_WINDOW_MINIMIZED)) {
+                SDL_WaitEvent(nullptr);
+                continue;
+            }
+
+            if (width != swapchain.window_width || height != swapchain.window_height) {
+                recreate_swapchain(swapchain, device, *gpu, surface, window.get());
+            }
+
+            Frame& frame = frames[frame_count % frames_in_flight];
+
+            // 1. Wait until the GPU is done with this frame's command buffer from last time.
+            (void)device.waitForFences(*frame.done, vk::True, no_timeout);
+
+            // 2. Ask the swapchain for an image; `image_acquired` is signalled once it's free.
+            const auto acquired = swapchain.handle.acquireNextImage(no_timeout, *frame.image_acquired);
+
+            if (acquired.result == vk::Result::eErrorOutOfDateKHR) {
+                recreate_swapchain(swapchain, device, *gpu, surface, window.get());
+                continue;
+            }
+
+            const std::uint32_t image_index = acquired.value;
+            device.resetFences(*frame.done);
+
+            // 3. Record and submit: wait for the image, clear it, signal `rendered` and `done`.
+            record_clear(frame.commands, swapchain, image_index, black);
+
+            const vk::SemaphoreSubmitInfo wait_info{
+                .semaphore = *frame.image_acquired,
+                .stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            };
+            const vk::CommandBufferSubmitInfo command_info{.commandBuffer = *frame.commands};
+            const vk::SemaphoreSubmitInfo signal_info{
+                .semaphore = *swapchain.rendered[image_index],
+                .stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            };
+
+            queue.submit2(vk::SubmitInfo2{
+                .waitSemaphoreInfoCount = 1,
+                .pWaitSemaphoreInfos = &wait_info,
+                .commandBufferInfoCount = 1,
+                .pCommandBufferInfos = &command_info,
+                .signalSemaphoreInfoCount = 1,
+                .pSignalSemaphoreInfos = &signal_info,
+            }, *frame.done);
+
+            // 4. Present once `rendered` is signalled.
+            const vk::Semaphore rendered = *swapchain.rendered[image_index];
+            const vk::SwapchainKHR swapchain_handle = *swapchain.handle;
+
+            const vk::Result presented = queue.presentKHR(vk::PresentInfoKHR{
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &rendered,
+                .swapchainCount = 1,
+                .pSwapchains = &swapchain_handle,
+                .pImageIndices = &image_index,
+            });
+
+            if (presented == vk::Result::eErrorOutOfDateKHR || presented == vk::Result::eSuboptimalKHR) {
+                recreate_swapchain(swapchain, device, *gpu, surface, window.get());
+            }
+
+            ++frame_count;
+        }
+
+        // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
+        device.waitIdle();
+        std::println("Presented {} frames", frame_count);
     } catch (const std::exception& e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;

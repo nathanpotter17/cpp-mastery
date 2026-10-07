@@ -4,6 +4,7 @@
 #include <array>
 #include <print>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -83,12 +84,12 @@ vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance
     return vk::raii::DebugUtilsMessengerEXT(instance, create_info);
 }
 
-vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, GLFWwindow* window) {
+vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, SDL_Window* window) {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 
-    // GLFW speaks the C API, so hand it the raw handle and wrap the result.
-    if (glfwCreateWindowSurface(static_cast<VkInstance>(*instance), window, nullptr, &surface) != VK_SUCCESS) {
-        throw std::runtime_error("glfwCreateWindowSurface failed (" + GlfwContext::last_error() + ")");
+    // SDL speaks the C API, so hand it the raw handle and wrap the result.
+    if (!SDL_Vulkan_CreateSurface(window, static_cast<VkInstance>(*instance), nullptr, &surface)) {
+        throw std::runtime_error(std::string("SDL_Vulkan_CreateSurface failed (") + SDL_GetError() + ")");
     }
 
     return vk::raii::SurfaceKHR(instance, surface);
@@ -112,6 +113,9 @@ std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::
             }
         }
 
+        // Dynamic rendering and synchronization2 are core in Vulkan 1.3.
+        const bool usable = family && properties.apiVersion >= vk::ApiVersion13;
+
         std::println(
             "  {:<45} {:<14} Vulkan {}.{}.{}  {}",
             properties.deviceName.data(),
@@ -119,10 +123,10 @@ std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::
             vk::apiVersionMajor(properties.apiVersion),
             vk::apiVersionMinor(properties.apiVersion),
             vk::apiVersionPatch(properties.apiVersion),
-            family ? "can present" : "can't present"
+            usable ? "usable" : family ? "needs Vulkan 1.3" : "can't present"
         );
 
-        if (family && rank(properties.deviceType) > best_rank) {
+        if (usable && rank(properties.deviceType) > best_rank) {
             best = GpuChoice{device, *family};
             best_rank = rank(properties.deviceType);
         }
@@ -142,7 +146,15 @@ vk::raii::Device create_device(const GpuChoice& gpu) {
 
     const std::array extensions{vk::KHRSwapchainExtensionName};
 
+    // Vulkan 1.3 features: draw without VkRenderPass/VkFramebuffer objects,
+    // and the simpler vkCmdPipelineBarrier2/vkQueueSubmit2.
+    vk::PhysicalDeviceVulkan13Features features13{
+        .synchronization2 = vk::True,
+        .dynamicRendering = vk::True,
+    };
+
     const vk::DeviceCreateInfo create_info{
+        .pNext = &features13,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
         .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),

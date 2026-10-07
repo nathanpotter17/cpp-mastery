@@ -5,6 +5,9 @@ project(CppMastery
     LANGUAGES CXX
 )
 
+# compile_commands.json in each build tree, for clangd (see lecture_N/.clangd).
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Set a default before configuring targets.
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
@@ -120,6 +123,11 @@ function(add_vendored_lib target lib_dir)
         # The default binary dir, <build>/lecture_N/vendor/<lib>, would put a
         # lecture_N/ directory where the lecture_N executable goes.
         set(lib_binary_dir ${CMAKE_BINARY_DIR}/vendor/${lib})
+
+        # Keep the lib's sources out of compile_commands.json (this is local to
+        # the function): clangd gives a header the flags of the closest-named
+        # file there, and would parse lecture_7's sdl.h as C, borrowing SDL.c.
+        set(CMAKE_EXPORT_COMPILE_COMMANDS OFF)
 
         # SYSTEM (CMake 3.25+) also silences warnings from the lib's headers.
         if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)

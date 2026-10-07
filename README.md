@@ -8,6 +8,7 @@
 
 ## Requirements
 
+- VS Code (Codium) + clangd, cmake extensions (syntax highlighting, LSP)
 - Ubuntu Linux or Windows 11
 - CMake v3.5+, g++ 14+, and Clang 17+.
 
