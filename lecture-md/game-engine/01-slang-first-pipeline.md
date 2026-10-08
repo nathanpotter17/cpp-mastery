@@ -2,7 +2,7 @@
 
 By the end of this chapter the window shows a triangle with red, green and blue corners. It's drawn by a shader we compile at build time and a pipeline with **no pipeline layout**, the first visible piece of the descriptor-heap model.
 
-This chapter builds on [Chapter 0](00-project-window-device.md), and needs `slangc` on your `PATH` (check with `slangc -v`).
+This chapter builds on [Chapter 0](00-project-window-device.md), and needs a recent Slang compiler on your `PATH` (check with `slangc -v`; this was tested with 2026.19).
 
 ## 1.1 The shader: `shaders/triangle.slang`
 
@@ -78,7 +78,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
 ## 1.2 Compiling shaders in the build: `CMakeLists.txt`
 
 ### Why
-Shaders are code, so they should be compiled by the build like the C++ is. When we edit a shader, running `./build.bash 1` should recompile that shader and nothing else. The program also needs to know where the `.spv` files end up.
+Shaders are code, so they should be compiled by the build like the C++ is. When we edit a shader, rebuilding should recompile that shader and nothing else. The program also needs to know where the `.spv` files end up.
 
 ### How
 - **One rule per shader:** for each `shaders/*.slang` file, `add_custom_command` declares "this `.spv` is produced by running slangc on this `.slang`". The rule only reruns when the shader changes.
@@ -411,15 +411,17 @@ void record_frame(
 ## 1.5 Build and run
 
 ```bash
-./game-engine/build.bash 1 && ./game-engine/build/debug-clang/game-engine
+./game-engine/build.bash
 ```
+
+Press Enter (option 7) to build in debug with clang and run.
 
 **Expected:**
 - **Shader compile:** the build log includes `Compiling triangle.slang`.
 - **The triangle:** on black, red at the top, green bottom-right, blue bottom-left, blended in between.
 - **Validation:** no `[validation …]` lines, including after resizing and minimizing the window.
-- **Incremental rebuilds:** edit only `triangle.slang` (change a color, say) and rerun `./build.bash 1`. Only `Compiling triangle.slang` runs, with no C++ rebuild.
+- **Incremental rebuilds:** edit only `triangle.slang` (change a color, say) and build again. Only `Compiling triangle.slang` runs, with no C++ rebuild.
 
-**Looking ahead:** Ubuntu's `slang-compiler` 2026.1.1 package can't yet produce the SPIR-V form the descriptor heap uses; it falls back to an older bindless descriptor array. That doesn't affect Chapters 2–5. Before Chapter 6 we'll either upgrade Slang or use the extension's own mapping from `set`/`binding` to the heap.
+**Looking ahead:** in Chapter 6, shaders index the descriptor heap directly, and slangc needs `-capability spvDescriptorHeapEXT` to emit that SPIR-V. Older compilers, such as Ubuntu's `slang-compiler` 2026.1.1 package, don't support it, which is why this project needs a recent Slang.
 
 The triangle's corners still live inside the shader. In Chapter 2 we'll move them into GPU memory. That means allocating a buffer ourselves, getting its 64-bit device address, and passing that address to the shader with `vkCmdPushDataEXT`, the first piece of the descriptor-heap API.

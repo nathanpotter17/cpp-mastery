@@ -1,6 +1,6 @@
 # Chapter 0: Project, window and device
 
-By the end of this chapter we'll have a window cleared to black by a Vulkan 1.4 device with the descriptor heap enabled. Nothing is drawn yet. What we get is a foundation that every later chapter builds on without changing it: the build, the window, the GPU choice and the frame loop.
+By the end of this chapter we'll have a window cleared to black by a Vulkan 1.4 device with the descriptor heap enabled. Nothing is drawn yet. What we get is the foundation every later chapter builds on: the build, the window, the GPU choice and the frame loop.
 
 ## 0.1 Project layout
 
@@ -29,7 +29,7 @@ vendor/
 
 `game-engine/.clangd`:
 ```yaml
-# clangd reads compile flags from the clang debug build (./build.bash 1).
+# clangd reads compile flags from the Debug Clang build (build.bash option 1 or 7).
 CompileFlags:
   CompilationDatabase: build/debug-clang
 ```
@@ -174,11 +174,13 @@ endif()
 ## 0.3 Building: `build.bash` and `lsan.supp`
 
 ### Why
-Six build configurations (clang or g++; debug, release, or debug with sanitizers) each need several CMake flags. A small script keeps them consistent and puts each configuration in its own directory, so switching between them never forces a full rebuild.
+Six build configurations (clang or g++; debug, release, or debug with sanitizers) each need several CMake flags. A small script keeps them consistent and puts each configuration in its own directory, so switching between them never forces a full rebuild. Most of the time we want to see the result straight away, so the script can also run the program after building it.
 
 ### How
-- **Choosing a build:** the script takes a menu number, or prompts for one, and maps it to a build directory and CMake flags. It then configures and builds.
-- **Sanitizer builds run immediately,** passing along any extra arguments, for example `./build.bash 5 --frames 60`.
+- **One menu:** run `./build.bash` and pick a number.
+  - **1–6** configure and build one configuration, each in its own `build/<config>/` directory.
+  - **7–12** do the same, then run the program. Pressing Enter picks 7: build in debug with clang, then run.
+- **Running:** the script sets the sanitizer options before starting the program; they only take effect in the sanitizer builds. Close the window or press Escape to quit.
 - **`lsan.supp`:** on Wayland, SDL loads libdecor to draw the title bar. Its GTK plugin holds some memory until the program exits, and LeakSanitizer would report that. `lsan.supp` lists those system libraries so only our own leaks are reported.
 
 ### Code
@@ -187,29 +189,38 @@ Six build configurations (clang or g++; debug, release, or debug with sanitizers
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Configures and builds game-engine into build/<config>/.
-#   ./build.bash              pick from the menu
-#   ./build.bash 5 --frames 60  build choice 5; sanitizer builds then run with the extra args
+# Configures and builds game-engine into build/<config>/, and optionally runs it.
 
 # CMake paths below are relative to this script's directory.
 cd "$(dirname "$0")"
 
-choice="${1:-}"
+# --- Menu --------------------------------------------------------------------
 
-if [[ -z "$choice" ]]; then
-  echo "
-1) Debug Clang
-2) Debug G++
-
-3) Release Clang
-4) Release G++
-
-5) Debug Clang with Asan & UbSan
-6) Debug G++ with Asan & UbSan
+echo "
+Build                            Build & run
+ 1) Debug Clang                   7) Debug Clang
+ 2) Debug G++                     8) Debug G++
+ 3) Release Clang                 9) Release Clang
+ 4) Release G++                  10) Release G++
+ 5) Debug Clang + Asan & UbSan   11) Debug Clang + Asan & UbSan
+ 6) Debug G++ + Asan & UbSan     12) Debug G++ + Asan & UbSan
 "
-  read -rp "Choose a build [1-6, Enter for 1]: " choice
-  choice="${choice:-1}"
+read -rp "Choose [1-12, Enter for 7]: " choice
+choice="${choice:-7}"
+
+if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > 12 )); then
+  echo "Invalid choice: $choice" >&2
+  exit 1
 fi
+
+# 7-12 are 1-6 plus a run afterwards.
+run=false
+if (( choice > 6 )); then
+  run=true
+  choice=$(( choice - 6 ))
+fi
+
+# --- Configurations ----------------------------------------------------------
 
 clang=(-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld)
 gcc=(-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++)
@@ -222,26 +233,31 @@ case "$choice" in
   4) config=release-gcc;      flags=(-DCMAKE_BUILD_TYPE=Release "${gcc[@]}") ;;
   5) config=debug-clang-asan; flags=(-DCMAKE_BUILD_TYPE=Debug "${clang[@]}" -DENABLE_SANITIZERS=ON) ;;
   6) config=debug-gcc-asan;   flags=(-DCMAKE_BUILD_TYPE=Debug "${gcc[@]}" -DENABLE_SANITIZERS=ON) ;;
-  *) echo "Invalid choice: $choice" >&2; exit 1 ;;
 esac
+
+# --- Build -------------------------------------------------------------------
 
 build_dir="build/$config"
 
 cmake -S . -B "$build_dir" -G Ninja "${flags[@]}"
 cmake --build "$build_dir"
 
-if [[ "$choice" != 5 && "$choice" != 6 ]]; then
-  echo
-  echo "Build succeeded: game-engine/$build_dir/game-engine"
+echo
+echo "Build succeeded: game-engine/$build_dir/game-engine"
+
+if [[ "$run" == false ]]; then
   exit 0
 fi
 
-# Sanitizer builds run straight away. lsan.supp lists leaks inside system
-# libraries (libdecor's GTK plugin on Wayland) that aren't ours to fix.
+# --- Run ---------------------------------------------------------------------
+
+# The sanitizer options only affect sanitizer builds. lsan.supp lists leaks
+# inside system libraries (libdecor's GTK plugin on Wayland) that aren't ours.
+echo
 LSAN_OPTIONS="suppressions=$PWD/lsan.supp" \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1 \
 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
-"./$build_dir/game-engine" "${@:2}"
+"./$build_dir/game-engine"
 ```
 
 Make it executable:
@@ -251,7 +267,7 @@ chmod +x game-engine/build.bash
 
 `game-engine/lsan.supp`:
 ```text
-# LeakSanitizer suppressions, used by the sanitizer builds (./build.bash 5 or 6).
+# LeakSanitizer suppressions, used when build.bash runs a sanitizer build (11 or 12).
 # On Wayland, SDL loads libdecor for window decorations, and its GTK plugin
 # brings in fontconfig/pango and dbus, which keep allocations until exit.
 # None of these stacks pass through our code or SDL.
@@ -259,7 +275,48 @@ leak:libfontconfig.so
 leak:libdbus-1.so
 ```
 
-## 0.4 The window: `src/includes/sdl.h`
+## 0.4 First build and the editor: a temporary `src/main.cpp`
+
+### Why
+The editor's C++ support, clangd, has to know how each file is compiled before it can follow `#include <SDL3/SDL.h>` into `vendor/SDL3/include`. It reads that from `build/debug-clang/compile_commands.json`, which the `.clangd` file points to. CMake writes that file while it configures a build, so until the first build, clangd doesn't know the file exists.
+
+Without it, clangd falls back to guessing: `'SDL3/SDL.h' file not found`, then a wave of errors for every SDL and Vulkan name, in code that compiles fine. So before writing the real code, we build once with a tiny `main.cpp` that only includes SDL and starts it.
+
+### How
+- **The temporary `main.cpp`** includes `SDL3/SDL.h` and initializes and shuts down SDL's video subsystem. That's enough for CMake to have one source file to list, and it shows that SDL builds and links. Section 0.8 replaces this file with the real frame loop.
+- **Build Debug Clang** (option 1 or 7). The first build compiles SDL itself, so it takes a while; later builds only recompile what changed.
+- **Restart clangd** once `compile_commands.json` exists. clangd doesn't notice the file when it appears in a project that's already open. In VS Code or VSCodium, open the command palette (Ctrl+Shift+P) and run **Developer: Reload Window**, or **clangd: Restart language server**. After that, the include resolves and the errors go away.
+- **This happens again whenever we vendor a new library** (glm in Chapter 3, tinygltf in Chapter 4, the image decoders in Chapter 5). Each of those chapters adds its library first, then builds once and restarts clangd, before any code includes the new headers.
+
+### Code
+`game-engine/src/main.cpp` (temporary):
+```cpp
+// Temporary: just enough for a first build, so CMake writes the
+// compile_commands.json clangd needs. Section 0.8 replaces this file.
+#include <SDL3/SDL.h>
+
+#include <print>
+
+int main() {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        std::println(stderr, "SDL failed to initialize: {}", SDL_GetError());
+        return 1;
+    }
+
+    std::println("SDL {}.{}.{} initialized", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION);
+    SDL_Quit();
+    return 0;
+}
+```
+
+Build and run it:
+```bash
+./game-engine/build.bash
+```
+
+Press Enter (option 7). After SDL compiles, the program prints `SDL 3.4.18 initialized` and exits. Then reload the editor window, open `src/main.cpp`, and check that `SDL_Init` has no red underline.
+
+## 0.5 The window: `src/includes/sdl.h`
 
 ### Why
 Vulkan can't open a window by itself, because windows belong to the operating system. SDL does that for us, gives us keyboard and window events, and later will provide audio. It also tells Vulkan two things: which *instance extensions* are needed to present to this platform's windows (Wayland here), and how to create a *surface*, the Vulkan object that represents the window.
@@ -344,7 +401,7 @@ inline Window make_vulkan_window(int width, int height, const char* title, bool 
 }
 ```
 
-## 0.5 Instance and device: `vulkan_setup.h` / `vulkan_setup.cpp`
+## 0.6 Instance and device: `vulkan_setup.h` / `vulkan_setup.cpp`
 
 This file holds everything between "we have a window" and "we have a device to send work to". It covers four concepts.
 
@@ -364,11 +421,12 @@ A machine can have several Vulkan devices. The one this was written on has an In
 You may only query an extension's feature struct after confirming the device has that extension. So `pick_gpu` checks in a fixed order (can present → Vulkan 1.4 → extensions → features) and prints the first check each GPU fails.
 
 ### Why: the logical device and its features
-The logical device is our handle to the chosen GPU, with the extensions and features turned on. We enable everything the renderer will ever rely on now, so the device never changes again:
+The logical device is our handle to the chosen GPU, with the extensions and features turned on. We enable everything the rasterizer (Chapters 1–7) relies on now, so the device stays the same until Chapter 8 adds the ray tracing extensions:
 
 | Feature | Used for |
 |---|---|
 | `synchronization2`, `dynamicRendering` | simpler barriers and submits, and rendering without `VkRenderPass` objects (both from lecture 7) |
+| `samplerAnisotropy` | sharper textures on surfaces seen at an angle, like floors (Chapter 5) |
 | `bufferDeviceAddress` | buffers as 64-bit GPU pointers: vertex data in Chapter 2, heap binding in Chapter 6 |
 | `scalarBlockLayout` | shader structs laid out exactly like C++ structs (Chapter 2) |
 | `descriptorHeap` | descriptors stored in buffers we own (Chapter 6) |
@@ -376,7 +434,7 @@ The logical device is our handle to the chosen GPU, with the extensions and feat
 
 ### How
 - **`vk::StructureChain`:** feature structs are passed as a linked list through `pNext`. `StructureChain` builds that list at compile time, in the order the types are listed. We use one alias, `Features`, both to query what a GPU supports and to enable it, so the two can't drift apart.
-- **`PhysicalDeviceFeatures2` heads the chain** and replaces `pEnabledFeatures`.
+- **`PhysicalDeviceFeatures2` heads the chain** and replaces `pEnabledFeatures`. Its `features` member holds the original Vulkan 1.0 features, such as `samplerAnisotropy`.
 - **Designated initializers must follow each struct's declaration order.** That's why `scalarBlockLayout` comes before `bufferDeviceAddress`.
 - **`print_descriptor_heap_properties`:** shows how big this GPU's descriptors are. The numbers explain what the heap is before we use it.
 
@@ -515,7 +573,8 @@ bool has_features(const vk::raii::PhysicalDevice& device) {
     const auto& vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
     const auto& vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
 
-    return vulkan12.bufferDeviceAddress
+    return supported.get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy
+        && vulkan12.bufferDeviceAddress
         && vulkan12.scalarBlockLayout
         && vulkan13.synchronization2
         && vulkan13.dynamicRendering
@@ -657,7 +716,9 @@ vk::raii::Device create_device(const GpuChoice& gpu) {
     // StructureChain fills in each struct's pNext, so the order here is the
     // order of the chain. Features2 at the head stands in for pEnabledFeatures.
     const Features features{
-        vk::PhysicalDeviceFeatures2{},
+        vk::PhysicalDeviceFeatures2{
+            .features = {.samplerAnisotropy = vk::True},  // sharper textures seen at an angle
+        },
         vk::PhysicalDeviceVulkan12Features{
             .scalarBlockLayout = vk::True,    // shader structs laid out like C++ structs
             .bufferDeviceAddress = vk::True,  // buffers as 64-bit GPU pointers
@@ -704,7 +765,7 @@ void print_descriptor_heap_properties(const GpuChoice& gpu) {
 }
 ```
 
-## 0.6 The swapchain: `swapchain.h` / `swapchain.cpp`
+## 0.7 The swapchain: `swapchain.h` / `swapchain.cpp`
 
 ### Why
 We never draw into the window directly. The **swapchain** is a small set of images the window system lends us. We acquire one, draw into it and give it back to be shown. Each image also needs an *image view*, which says how to read or write it, and a semaphore that signals "drawing is finished, safe to present". When the window is resized, the images have the wrong size, so the whole swapchain is rebuilt.
@@ -906,7 +967,7 @@ void recreate_swapchain(
 }
 ```
 
-## 0.7 The frame loop: `main.cpp`
+## 0.8 The frame loop: `main.cpp`
 
 ### Why
 The GPU runs on its own timeline. We *record* commands into a command buffer, *submit* them, and the GPU executes them later. To keep both processors busy, the CPU records frame N+1 while the GPU is still drawing frame N. That requires synchronization:
@@ -929,19 +990,17 @@ The GPU runs on its own timeline. We *record* commands into a command buffer, *s
 - **Destruction order:** objects in `main` are destroyed in reverse declaration order. The window is declared before the instance, because SDL needs the window to have loaded Vulkan first.
 
 ### Code
-`game-engine/src/main.cpp`:
+`game-engine/src/main.cpp`, replacing the temporary one from section 0.4:
 ```cpp
 #include "includes/sdl.h"
 #include "includes/swapchain.h"
 #include "includes/vulkan_setup.h"
 
 #include <array>
-#include <charconv>
 #include <cstdlib>
 #include <exception>
 #include <limits>
 #include <print>
-#include <string_view>
 #include <vector>
 
 namespace {
@@ -1046,21 +1105,7 @@ void record_frame(
     commands.end();
 }
 
-// --- Arguments and events ----------------------------------------------------
-
-// `--frames N` closes the window after N frames (for scripted runs); 0 means never.
-std::uint64_t frame_limit(int argc, char** argv) {
-    std::uint64_t limit = 0;
-
-    for (int i = 1; i + 1 < argc; ++i) {
-        if (std::string_view(argv[i]) == "--frames") {
-            const std::string_view value = argv[i + 1];
-            std::from_chars(value.data(), value.data() + value.size(), limit);
-        }
-    }
-
-    return limit;
-}
+// --- Events ------------------------------------------------------------------
 
 // Handles every pending event. False once the window was closed or Escape pressed.
 bool poll_events() {
@@ -1079,7 +1124,7 @@ bool poll_events() {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main() {
     try {
         // --- Window and instance ---------------------------------------------
 
@@ -1101,7 +1146,7 @@ int main(int argc, char** argv) {
         // Declaration order matters: each object is destroyed before the ones above it.
         // The window comes first: creating it loads Vulkan into SDL, which
         // required_vulkan_extensions() needs.
-        Window window = make_vulkan_window(800, 600, "game-engine", true);
+        Window window = make_vulkan_window(1920, 1080, "game-engine", true);
 
         vk::raii::Instance instance = create_instance(context, SdlContext::required_vulkan_extensions(), validation);
         vk::raii::DebugUtilsMessengerEXT messenger = validation
@@ -1154,10 +1199,9 @@ int main(int argc, char** argv) {
         // --- Frame loop ------------------------------------------------------
 
         const std::array black{0.0f, 0.0f, 0.0f, 1.0f};
-        const std::uint64_t limit = frame_limit(argc, argv);
         std::uint64_t frame_count = 0;
 
-        while (poll_events() && (limit == 0 || frame_count < limit)) {
+        while (poll_events()) {
             // Minimised: nothing to draw into, so sleep until something happens.
             int width = 0;
             int height = 0;
@@ -1243,13 +1287,13 @@ int main(int argc, char** argv) {
 }
 ```
 
-## 0.8 Build and run
+## 0.9 Build and run
 
 ```bash
-./game-engine/build.bash 1 && ./game-engine/build/debug-clang/game-engine --frames 120
+./game-engine/build.bash
 ```
 
-On the machine this was written on, the output is:
+Press Enter (option 7) to build in debug with clang and run. On the machine this was written on, the program prints:
 ```
 SDL 3.4.18 on wayland
 Validation layer on
@@ -1265,7 +1309,7 @@ Descriptor heap:
   resource heap       up to 33554432 bytes, 96768 reserved for the driver
   sampler heap        up to 131072 bytes, 512 reserved for the driver
   push data           256 bytes
-Presented 120 frames
+Presented 353 frames
 ```
 
 **What the heap numbers mean:**
@@ -1273,6 +1317,6 @@ Presented 120 frames
 - The "reserved" bytes are a slice of *our* buffer that we hand over to the driver.
 - The 256 bytes of push data replace push constants.
 
-There should be no `[validation …]` lines. Run `./game-engine/build.bash 1` once before opening the project in the editor, so clangd has its compile commands.
+The last line appears when you close the window; the count depends on how long it was open. There should be no `[validation …]` lines.
 
 We have a black window and a device that's ready for the descriptor heap. Next, in [Chapter 1](01-slang-first-pipeline.md), let's draw something.

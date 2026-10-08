@@ -19,13 +19,5 @@ cmake -S . -B "$BUILD_DIR" -G Ninja \
 
 cmake --build "$BUILD_DIR" --verbose
 
-# A lecture can list leaks to ignore (e.g. inside system libraries) in lsan.supp.
-LSAN_OPTIONS=""
-if [[ -f "$LECTURE/lsan.supp" ]]; then
-    LSAN_OPTIONS="suppressions=$LECTURE/lsan.supp"
-fi
-export LSAN_OPTIONS
-
-ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1 \
-UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
-"./$BUILD_DIR/$LECTURE"
+echo
+echo "Build succeeded: $BUILD_DIR/$LECTURE"

@@ -14,8 +14,8 @@ cmake -S . -B "$BUILD_DIR" -G Ninja \
     -DLECTURE="$LECTURE" \
     -DCMAKE_BUILD_TYPE=Debug \
     -DSTATIC_RUNTIME=ON \
-    -DCMAKE_C_COMPILER=clang-17 \
-    -DCMAKE_CXX_COMPILER=clang++-17 \
+    -DCMAKE_C_COMPILER=clang-19 \
+    -DCMAKE_CXX_COMPILER=clang++-19 \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld"
 
 cmake --build "$BUILD_DIR" --verbose
