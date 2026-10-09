@@ -640,7 +640,7 @@ vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device& device, vk::Form
 
     // Depth: keep a fragment only if it's nearer than what's already there,
     // then record its depth. With reverse-Z (see camera.cpp) nearer means a
-    // *greater* depth value, and the buffer is cleared to 0, "infinitely far".
+    // *greater* depth value, and the buffer is cleared to 0, the far plane.
     const vk::PipelineDepthStencilStateCreateInfo depth_stencil{
         .depthTestEnable = vk::True,
         .depthWriteEnable = vk::True,
@@ -710,7 +710,7 @@ The camera turns "where am I and where am I looking" into the view and projectio
 - **Where it looks:** the camera stores a position plus two angles, **yaw** (turning left and right around +Y) and **pitch** (looking up and down). `forward()` turns them into a direction. At yaw 0 and pitch 0 that direction is −Z, because glm's view space looks down −Z.
 - **`view()`:** `glm::lookAt` builds the view matrix from the position, a point straight ahead, and the world's up direction.
 - **`projection()`:** `glm::perspective` with the vertical field of view and the image's aspect ratio. Two Vulkan-specific details:
-  - **Reverse-Z:** passing the far plane *before* the near plane maps near to depth 1 and far to depth 0. Perspective crowds most of the depth range close to the camera, while floating-point numbers are most precise near 0. Reversing the range puts the float precision where perspective needs it, so distant surfaces don't flicker against each other. The depth buffer is cleared to 0 ("infinitely far"), and the test keeps greater values.
+  - **Reverse-Z:** passing the far plane *before* the near plane maps near to depth 1 and far to depth 0. Perspective crowds most of the depth range close to the camera, while floating-point numbers are most precise near 0. Reversing the range puts the float precision where perspective needs it, so distant surfaces don't flicker against each other. The depth buffer is cleared to 0, the far plane, and the test keeps greater values.
   - **Y flip:** glm's clip space has +Y up, like OpenGL. Vulkan's has +Y down. Negating `projection[1][1]` flips it.
 - **`update_camera`:** the button held decides what the mouse does.
   - **Right button (fly):** mouse movement turns the camera, with pitch clamped just short of straight up or down, where forward and up would point the same way. `SDL_GetKeyboardState` reports which keys are held right now, and the camera moves along its forward, right and up directions. Scrolling multiplies the speed by 1.25 per step, between 0.05 and 500.
@@ -1025,7 +1025,7 @@ void record_frame(
         .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
     };
 
-    // Reverse-Z: 0 is infinitely far. Depth is only needed while drawing this
+    // Reverse-Z: 0 is the far plane. Depth is only needed while drawing this
     // frame, so it isn't stored afterwards.
     const vk::RenderingAttachmentInfo depth_attachment{
         .imageView = *swapchain.depth.view,

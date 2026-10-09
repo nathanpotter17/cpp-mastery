@@ -66,7 +66,7 @@ To sample a texture, each vertex needs **texture coordinates**, often called "UV
 - **`Material` holds the glTF base color factor and a texture index.**
   - The index counts descriptors in the resource heap.
   - Index 0 is a 1×1 white texture, so a material without a texture still samples one: white times the factor is just the factor, and the shader needs no branch for "no texture".
-- **Padding:** `DrawData` and `Material` are padded to multiples of 16 bytes, so each `float4` in an array of them starts 16-byte aligned, which GPUs load fastest. Chapter 6 fills `Material`'s padding with more material properties. The padding members get `{}` default values, so leaving them out of a designated initializer doesn't trigger clang's `-Wmissing-designated-field-initializers`.
+- **No padding:** every struct is packed tight. Data behind a pointer only needs each member aligned to its scalar's size, 4 bytes here, so `DrawData` is 132 bytes and `Material` 20, and arrays of them are exactly that far apart.
 - **Push data** gains the material buffer's address.
 
 ### Code
@@ -101,16 +101,14 @@ static_assert(offsetof(Vertex, uv) == 24);
 
 // --- Per-draw data -----------------------------------------------------------
 
-// One per draw, in a GPU buffer the shader indexes. Padded to a multiple of
-// 16 bytes, so every DrawData in the array starts 16-byte aligned.
+// One per draw, in a GPU buffer the shader indexes.
 struct DrawData {
     glm::mat4 model;          // this primitive's space -> world space
     glm::mat4 normal_matrix;  // transposed inverse of model: keeps normals perpendicular under any scale
     std::uint32_t material;   // index into the material buffer
-    std::uint32_t padding[3]{};
 };
 
-static_assert(sizeof(DrawData) == 144);
+static_assert(sizeof(DrawData) == 132);
 static_assert(offsetof(DrawData, normal_matrix) == 64);
 static_assert(offsetof(DrawData, material) == 128);
 
@@ -118,15 +116,14 @@ static_assert(offsetof(DrawData, material) == 128);
 
 // What the shader needs to know about a glTF material, so far. Texture
 // indices count descriptors in the resource heap; 0 is a 1x1 white texture,
-// so a material without a texture multiplies by white. Chapter 6 fills the
-// padding with more material properties.
+// so a material without a texture multiplies by white. Chapter 6 adds the
+// rest of glTF's material properties.
 struct Material {
     glm::vec4 base_color_factor;      // linear RGBA, multiplies the texture
     std::uint32_t base_color_texture; // resource heap index
-    std::uint32_t padding[3]{};
 };
 
-static_assert(sizeof(Material) == 32);
+static_assert(sizeof(Material) == 20);
 static_assert(offsetof(Material, base_color_texture) == 16);
 
 // --- Push data ---------------------------------------------------------------
@@ -1405,13 +1402,11 @@ struct DrawData {
     float4x4 model;          // this primitive's space -> world space
     float4x4 normal_matrix;  // transposed inverse of model
     uint material;           // index into the materials
-    uint3 padding;
 };
 
 struct Material {
     float4 base_color_factor;  // linear RGBA, multiplies the texture
     uint base_color_texture;   // resource heap index; 0 is plain white
-    uint3 padding;
 };
 
 // Written with vkCmdPushDataEXT before each draw.
@@ -1480,11 +1475,12 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
 
     // Without normals in the file, glTF asks for flat shading. The triangle's
     // own normal is the cross product of how the position changes across
-    // neighbouring pixels (ddx, ddy).
+    // neighbouring pixels (ddx, ddy). Vulkan's screen Y points down, so
+    // cross(ddy, ddx) is the order that points toward the camera.
     float3 normal = input.normal;
 
     if (all(normal == 0.0)) {
-        normal = cross(ddx(input.world_position), ddy(input.world_position));
+        normal = cross(ddy(input.world_position), ddx(input.world_position));
     }
 
     normal = normalize(normal);
@@ -1662,7 +1658,7 @@ void record_frame(
         .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
     };
 
-    // Reverse-Z: 0 is infinitely far. Depth is only needed while drawing this
+    // Reverse-Z: 0 is the far plane. Depth is only needed while drawing this
     // frame, so it isn't stored afterwards.
     const vk::RenderingAttachmentInfo depth_attachment{
         .imageView = *swapchain.depth.view,

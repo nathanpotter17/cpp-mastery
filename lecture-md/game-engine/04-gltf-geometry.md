@@ -648,8 +648,8 @@ The shader now looks up its draw's matrices, transforms the normal, and does sim
 ### How
 - **The vertex shader** reads `push.draws[push.draw_index]` for the matrices. It transforms the normal by the normal matrix. `(float3x3)` takes the upper 3×3, since normals are directions and translation doesn't apply to them. It also passes the world position on.
 - **`SV_VulkanVertexID` pays off here.** It includes the draw's `vertexOffset`, so every primitive's indices start at 0 and the draw call says where that primitive's vertices begin in the shared buffer.
-- **Missing normals:** glTF says a primitive without normals is flat-shaded. In the fragment shader, `ddx` and `ddy` give how the world position changes between neighboring pixels. Their cross product is the triangle's own normal, with no extra vertex data needed.
-- **Lighting:** one fixed directional light, with 15% ambient so unlit sides aren't black. There's no back-face culling yet (that needs materials' `doubleSided` flag, in Chapter 7), so `abs()` lights both sides alike.
+- **Missing normals:** glTF says a primitive without normals is flat-shaded. In the fragment shader, `ddx` and `ddy` give how the world position changes between neighboring pixels, to the right and downward. Their cross product is the triangle's own normal, with no extra vertex data needed. The order matters: Vulkan's screen Y points down, so `cross(ddy, ddx)` is the one that points toward the camera.
+- **Lighting:** one fixed directional light, with 15% ambient so unlit sides aren't black. There's no back-face culling yet (that needs materials' `doubleSided` flag, in Chapter 6), so `abs()` lights both sides alike.
 
 ### Code
 `game-engine/shaders/mesh.slang`:
@@ -722,11 +722,12 @@ static const float3 light_direction = normalize(float3(0.4, 1.0, 0.3));
 float4 fragmentMain(VertexOutput input) : SV_Target {
     // Without normals in the file, glTF asks for flat shading. The triangle's
     // own normal is the cross product of how the position changes across
-    // neighbouring pixels (ddx, ddy).
+    // neighbouring pixels (ddx, ddy). Vulkan's screen Y points down, so
+    // cross(ddy, ddx) is the order that points toward the camera.
     float3 normal = input.normal;
 
     if (all(normal == 0.0)) {
-        normal = cross(ddx(input.world_position), ddy(input.world_position));
+        normal = cross(ddy(input.world_position), ddx(input.world_position));
     }
 
     normal = normalize(normal);
@@ -881,7 +882,7 @@ void record_frame(
         .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
     };
 
-    // Reverse-Z: 0 is infinitely far. Depth is only needed while drawing this
+    // Reverse-Z: 0 is the far plane. Depth is only needed while drawing this
     // frame, so it isn't stored afterwards.
     const vk::RenderingAttachmentInfo depth_attachment{
         .imageView = *swapchain.depth.view,
