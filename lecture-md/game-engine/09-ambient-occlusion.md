@@ -99,30 +99,30 @@ struct Swapchain {
 };
 
 Swapchain create_swapchain(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 );
 
 // Rebuilds `swapchain` for the window's current size (after a resize).
 // Waits for the GPU to go idle first.
 void recreate_swapchain(
-    Swapchain& swapchain,
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    Swapchain &swapchain,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 );
 ```
 
 In `game-engine/src/swapchain.cpp`, replace `build` with:
 ```cpp
 Swapchain build(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window,
     vk::SwapchainKHR old_swapchain
 ) {
     Swapchain swapchain;
@@ -194,7 +194,7 @@ Swapchain build(
     swapchain.ao_normals = create_image(device, gpu, half, normal_format,
         vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor);
 
-    for (Image* image : {&swapchain.ao_raw, &swapchain.ao_blur}) {
+    for (Image *image : {&swapchain.ao_raw, &swapchain.ao_blur}) {
         *image = create_image(device, gpu, half, ao_format,
             vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor);
     }
@@ -213,11 +213,11 @@ Swapchain build(
 Then replace `recreate_swapchain` with:
 ```cpp
 void recreate_swapchain(
-    Swapchain& swapchain,
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    Swapchain &swapchain,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 ) {
     // Nothing may still be using the old images, views or semaphores.
     device.waitIdle();
@@ -263,7 +263,7 @@ A descriptor names the layout the image will be in while shaders read it. Color 
 // so it's uploaded once to device-local memory.
 struct DescriptorHeaps {
     Buffer resources;
-    std::byte* resource_bytes = nullptr;       // the resource heap, mapped
+    std::byte *resource_bytes = nullptr;       // the resource heap, mapped
     vk::DeviceSize image_descriptor_size = 0;  // bytes per slot
     std::uint32_t resource_slots = 0;          // slots before the reserved range
     vk::DeviceSize resource_reserved_offset = 0;
@@ -282,10 +282,10 @@ struct DescriptorHeaps {
 //     index i + 1; after them comes `clamp_sampler`, for images that mustn't
 //     wrap around at their edges.
 DescriptorHeaps create_descriptor_heaps(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const Texture> textures,
     std::span<const SceneSampler> samplers,
     std::uint32_t extra_slots
@@ -298,24 +298,24 @@ DescriptorHeaps create_descriptor_heaps(
 //     handle, in eGeneral layout.
 // The GPU must not be reading the slot while it's written.
 void write_image_descriptor(
-    const vk::raii::Device& device,
-    DescriptorHeaps& heaps,
+    const vk::raii::Device &device,
+    DescriptorHeaps &heaps,
     std::uint32_t slot,
-    const vk::ImageViewCreateInfo& view,
+    const vk::ImageViewCreateInfo &view,
     vk::DescriptorType type = vk::DescriptorType::eSampledImage
 );
 
 // Makes `heaps` the ones shaders read for the rest of `commands`.
-void bind_descriptor_heaps(const vk::raii::CommandBuffer& commands, const DescriptorHeaps& heaps);
+void bind_descriptor_heaps(const vk::raii::CommandBuffer &commands, const DescriptorHeaps &heaps);
 ```
 
 In `game-engine/src/descriptor_heap.cpp`, replace `write_image_descriptor` with:
 ```cpp
 void write_image_descriptor(
-    const vk::raii::Device& device,
-    DescriptorHeaps& heaps,
+    const vk::raii::Device &device,
+    DescriptorHeaps &heaps,
     std::uint32_t slot,
-    const vk::ImageViewCreateInfo& view,
+    const vk::ImageViewCreateInfo &view,
     vk::DescriptorType type
 ) {
     if (slot >= heaps.resource_slots) {
@@ -726,11 +726,11 @@ struct EnvironmentInfo {
 struct FrameData {
     float4x4 view_projection;          // world space -> clip space
     float4x4 inverse_view_projection;  // clip space -> world space
-    Vertex* vertices;                  // the scene's vertices
-    DrawData* draws;                   // one DrawData per draw
-    Material* materials;               // the scene's materials
-    Light* lights;                     // the file's lights
-    EnvironmentInfo* environment;      // the sky's diffuse light and the sun
+    Vertex *vertices;                  // the scene's vertices
+    DrawData *draws;                   // one DrawData per draw
+    Material *materials;               // the scene's materials
+    Light *lights;                     // the file's lights
+    EnvironmentInfo *environment;      // the sky's diffuse light and the sun
     float3 camera_position;
     float exposure;                    // scene nits -> tone mapper input
     float3 sun_direction;              // toward the sun
@@ -749,7 +749,7 @@ struct FrameData {
 
 // Written with vkCmdPushDataEXT before each draw.
 struct PushData {
-    FrameData* frame;  // this frame's data
+    FrameData *frame;  // this frame's data
     uint draw_index;   // which DrawData this draw uses
 };
 
@@ -844,7 +844,7 @@ struct VertexOutput {
 // that primitive's vertices begin in the shared buffer.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Vertex vertex = frame.vertices[vertex_id];
     const DrawData draw = frame.draws[push.draw_index];
 
@@ -1062,7 +1062,7 @@ float3 punctual_light(Light light, float3 position, out float3 l) {
 
 // The sky's irradiance on a surface facing `n`, in lux: its nine spherical
 // harmonics coefficients, each weighted by its basis function at `n`.
-float3 sky_irradiance(EnvironmentInfo* environment, float3 n) {
+float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     const float basis[9] = {
         0.282095,
         0.488603 * n.y,
@@ -1129,7 +1129,7 @@ float specular_occlusion(float n_dot_v, float visibility, float alpha) {
 //     the BRDF reflects overall (the table, as a scale and bias on F0),
 //     dimmed by the specular occlusion.
 //   - A roughness-aware Fresnel term splits the light between the two.
-float3 shade_environment(Surface surface, FrameData* frame, float roughness, float visibility, float3 irradiance_normal) {
+float3 shade_environment(Surface surface, FrameData *frame, float roughness, float visibility, float3 irradiance_normal) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
     const float3 f0 = lerp(float3(0.04), surface.base_color, surface.metallic);
     const float3 fresnel = f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(1.0 - n_dot_v, 5.0);
@@ -1175,7 +1175,7 @@ float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
 // surfaces the lighting pass will shade.
 [shader("fragment")]
 float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[push.draw_index].material];
 
     if (alpha_mode == alpha_mask) {
@@ -1194,7 +1194,7 @@ float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Ta
 // SV_IsFrontFace: whether this triangle faces the camera.
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[push.draw_index].material];
 
     // Base color: factor x texture x vertex color. sRGB textures are decoded
@@ -1326,7 +1326,7 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
 // space gives a point on that ray; the direction is from the camera to it.
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
 
     const float4 far_point = mul(frame.inverse_view_projection, float4(input.clip, 0.0, 1.0));
     const float3 direction = normalize(far_point.xyz / far_point.w - frame.camera_position);
@@ -1376,7 +1376,7 @@ Opaque and masked materials are now drawn twice: once in the prepass and once in
 #include <vector>
 
 // A .spv file as the 32-bit words SPIR-V is made of.
-std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path);
+std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path);
 
 // The two passes the scene is drawn in.
 enum class MeshPass {
@@ -1389,7 +1389,7 @@ enum class MeshPass {
 // `alpha_mode`. There is no pipeline layout: shaders find their resources in
 // the descriptor heap. Cull mode and front face are set per draw.
 vk::raii::Pipeline create_mesh_pipeline(
-    const vk::raii::Device& device,
+    const vk::raii::Device &device,
     vk::Format color_format,
     vk::Format depth_format,
     AlphaMode alpha_mode,
@@ -1402,20 +1402,20 @@ vk::raii::Pipeline create_mesh_pipeline(
 // plane, without writing depth, so it only reaches pixels nothing else has
 // been drawn on: that's how the sky goes behind the scene.
 vk::raii::Pipeline create_fullscreen_pipeline(
-    const vk::raii::Device& device,
-    const char* shader,
+    const vk::raii::Device &device,
+    const char *shader,
     vk::Format color_format,
     vk::Format depth_format = vk::Format::eUndefined
 );
 
 // A compute pipeline running `entry_point` from shaders/<shader>.spv.
-vk::raii::Pipeline create_compute_pipeline(const vk::raii::Device& device, const char* shader, const char* entry_point);
+vk::raii::Pipeline create_compute_pipeline(const vk::raii::Device &device, const char *shader, const char *entry_point);
 ```
 
 In `game-engine/src/pipeline.cpp`, replace `create_mesh_pipeline` with:
 ```cpp
 vk::raii::Pipeline create_mesh_pipeline(
-    const vk::raii::Device& device,
+    const vk::raii::Device &device,
     vk::Format color_format,
     vk::Format depth_format,
     AlphaMode alpha_mode,
@@ -1635,7 +1635,7 @@ Earlier screen-space methods sampled points around each pixel and counted how ma
 // --- Data shared with C++ (src/includes/shader_types.h) ----------------------
 
 struct AoPushData {
-    FrameData* frame;
+    FrameData *frame;
     uint depth;       // the depth buffer, full resolution
     uint normals;     // the prepass's normals, full resolution
     uint ao_depth;    // half resolution: distance in front of the camera
@@ -1664,7 +1664,7 @@ static const float half_pi = 1.57079633;
 // The position, relative to the camera, of the surface at full-resolution
 // pixel position `pixel` with depth `depth`: its clip-space coordinates,
 // back through the inverse view-projection, divided by w.
-float3 unproject(FrameData* frame, float2 pixel, float depth) {
+float3 unproject(FrameData *frame, float2 pixel, float depth) {
     const float2 ndc = pixel / float2(push.width, push.height) * 2.0 - 1.0;
     const float4 position = mul(frame.inverse_view_projection, float4(ndc, depth, 1.0));
     return position.xyz / position.w - frame.camera_position;
@@ -1672,7 +1672,7 @@ float3 unproject(FrameData* frame, float2 pixel, float depth) {
 
 // Where a position relative to the camera lands on screen, in
 // full-resolution pixels.
-float2 to_pixels(FrameData* frame, float3 position) {
+float2 to_pixels(FrameData *frame, float3 position) {
     const float4 clip = mul(frame.view_projection, float4(position + frame.camera_position, 1.0));
     return (clip.xy / clip.w * 0.5 + 0.5) * float2(push.width, push.height);
 }
@@ -1681,7 +1681,7 @@ float2 to_pixels(FrameData* frame, float3 position) {
 // Both this and view_ray unproject at the far plane, depth 0, 500 m away:
 // a point on the near plane, 5 cm away, would lose most of its digits when
 // the camera's position is taken off it.
-float3 camera_forward(FrameData* frame) {
+float3 camera_forward(FrameData *frame) {
     return normalize(unproject(frame, float2(push.width, push.height) * 0.5, 0.0));
 }
 
@@ -1690,7 +1690,7 @@ float3 camera_forward(FrameData* frame) {
 // distance d in front of the camera, along the ray, is at ray x d. Rays
 // through the pixels of one row or column change by the same amount from
 // pixel to pixel, so a few rays give all the others by adding.
-float3 view_ray(FrameData* frame, float2 pixel, float3 forward) {
+float3 view_ray(FrameData *frame, float2 pixel, float3 forward) {
     const float3 far_point = unproject(frame, pixel, 0.0);
     return far_point / dot(far_point, forward);
 }
@@ -1719,7 +1719,7 @@ void prefilterMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
     const Texture2D normals = Texture2D.Handle(uint2(push.normals, 0));
     RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
@@ -1812,7 +1812,7 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const int2 pixel = int2(id.xy);
     RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
     RWTexture2D<float2> ao_normals = RWTexture2D<float2>.Handle(uint2(push.ao_normals, 0));
@@ -2045,7 +2045,7 @@ void upsampleMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const int2 pixel = int2(id.xy);
     const int2 size = int2(half_size());
     const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
@@ -2156,7 +2156,7 @@ struct AoTargets {
     std::uint32_t ao = 0;          // swapchain.ao, full resolution
 };
 
-AmbientOcclusion create_ambient_occlusion(const vk::raii::Device& device);
+AmbientOcclusion create_ambient_occlusion(const vk::raii::Device &device);
 
 // Records the whole pass, in four steps: the prefilter, into the
 // half-resolution depth and normals; the search, into ao_raw; the blur,
@@ -2165,10 +2165,10 @@ AmbientOcclusion create_ambient_occlusion(const vk::raii::Device& device);
 // normals (sampled, in their read-only layouts by now); the rest is filled
 // in here. On return swapchain.ao is ready for fragment shaders.
 void record_ambient_occlusion(
-    const vk::raii::CommandBuffer& commands,
-    const AmbientOcclusion& ambient_occlusion,
-    const Swapchain& swapchain,
-    const AoTargets& targets,
+    const vk::raii::CommandBuffer &commands,
+    const AmbientOcclusion &ambient_occlusion,
+    const Swapchain &swapchain,
+    const AoTargets &targets,
     AoPushData push
 );
 ```
@@ -2183,8 +2183,8 @@ namespace {
 
 // Moves a whole color image between layouts, after `src` work, before `dst` work.
 void barrier(
-    const vk::raii::CommandBuffer& commands,
-    const Image& image,
+    const vk::raii::CommandBuffer &commands,
+    const Image &image,
     vk::ImageLayout from,
     vk::ImageLayout to,
     vk::PipelineStageFlags2 src_stage,
@@ -2210,7 +2210,7 @@ void barrier(
 
 // One compute step over an image `size` pixels wide, in the shaders' 8 x 8
 // workgroups.
-void dispatch(const vk::raii::CommandBuffer& commands, const vk::raii::Pipeline& pipeline, const AoPushData& push, vk::Extent2D size) {
+void dispatch(const vk::raii::CommandBuffer &commands, const vk::raii::Pipeline &pipeline, const AoPushData &push, vk::Extent2D size) {
     commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
     commands.pushDataEXT(vk::PushDataInfoEXT{
         .offset = 0,
@@ -2220,7 +2220,7 @@ void dispatch(const vk::raii::CommandBuffer& commands, const vk::raii::Pipeline&
 }
 
 // Between two compute steps: the first's storage writes, visible to the second.
-void compute_to_compute(const vk::raii::CommandBuffer& commands) {
+void compute_to_compute(const vk::raii::CommandBuffer &commands) {
     const vk::MemoryBarrier2 memory{
         .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
         .srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
@@ -2235,7 +2235,7 @@ void compute_to_compute(const vk::raii::CommandBuffer& commands) {
 
 // --- Creating ----------------------------------------------------------------
 
-AmbientOcclusion create_ambient_occlusion(const vk::raii::Device& device) {
+AmbientOcclusion create_ambient_occlusion(const vk::raii::Device &device) {
     AmbientOcclusion ambient_occlusion;
     ambient_occlusion.prefilter = create_compute_pipeline(device, "ao", "prefilterMain");
     ambient_occlusion.search = create_compute_pipeline(device, "ao", "gtaoMain");
@@ -2247,10 +2247,10 @@ AmbientOcclusion create_ambient_occlusion(const vk::raii::Device& device) {
 // --- Recording ---------------------------------------------------------------
 
 void record_ambient_occlusion(
-    const vk::raii::CommandBuffer& commands,
-    const AmbientOcclusion& ambient_occlusion,
-    const Swapchain& swapchain,
-    const AoTargets& targets,
+    const vk::raii::CommandBuffer &commands,
+    const AmbientOcclusion &ambient_occlusion,
+    const Swapchain &swapchain,
+    const AoTargets &targets,
     AoPushData push
 ) {
     const vk::Extent2D full = swapchain.extent;
@@ -2271,7 +2271,7 @@ void record_ambient_occlusion(
         vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead,
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite);
 
-    for (const Image* image : {&swapchain.ao_depth, &swapchain.ao_normals, &swapchain.ao_raw, &swapchain.ao_blur}) {
+    for (const Image *image : {&swapchain.ao_depth, &swapchain.ao_normals, &swapchain.ao_raw, &swapchain.ao_blur}) {
         barrier(commands, *image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
             vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageRead,
             vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite);
@@ -2377,7 +2377,7 @@ struct Frame {
     vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
     vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     Buffer data;                                   // one FrameData, host-visible
-    FrameData* mapped = nullptr;                   // `data`, mapped for the CPU to write
+    FrameData *mapped = nullptr;                   // `data`, mapped for the CPU to write
 };
 
 // --- Recording a frame -------------------------------------------------------
@@ -2385,7 +2385,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -2470,13 +2470,13 @@ struct DrawList {
 // Draws one alpha mode's batch with `pipeline`. Push data says where the
 // frame's data is and which DrawData to use; the primitive's index range
 // and vertex offset go to drawIndexed.
-void draw_batch(const vk::raii::CommandBuffer& commands, const DrawList& draws, std::size_t mode, const vk::raii::Pipeline& pipeline) {
+void draw_batch(const vk::raii::CommandBuffer &commands, const DrawList &draws, std::size_t mode, const vk::raii::Pipeline &pipeline) {
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
     for (const std::uint32_t i : draws.batches[mode]) {
-        const MeshDraw& mesh_draw = draws.mesh_draws[i];
-        const Primitive& primitive = draws.primitives[mesh_draw.primitive];
-        const SceneMaterial& material = draws.scene_materials[primitive.material];
+        const MeshDraw &mesh_draw = draws.mesh_draws[i];
+        const Primitive &primitive = draws.primitives[mesh_draw.primitive];
+        const SceneMaterial &material = draws.scene_materials[primitive.material];
 
         // Single-sided surfaces are invisible from behind, so the GPU can
         // skip their back faces before running the fragment shader.
@@ -2496,7 +2496,7 @@ void draw_batch(const vk::raii::CommandBuffer& commands, const DrawList& draws, 
 
 // The viewport and scissor every pass uses: the whole image. The pipelines
 // leave both dynamic.
-void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) {
+void set_viewport(const vk::raii::CommandBuffer &commands, vk::Extent2D extent) {
     commands.setViewport(0, vk::Viewport{
         .x = 0.0f,
         .y = 0.0f,
@@ -2517,13 +2517,13 @@ void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) 
 //   4. tone mapping, from the HDR image into the swapchain image, which is
 //      then ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
-    const ScenePipelines& pipelines,
-    const AmbientOcclusion& ambient_occlusion,
-    const DescriptorHeaps& heaps,
-    const DrawList& draws
+    const ScenePipelines &pipelines,
+    const AmbientOcclusion &ambient_occlusion,
+    const DescriptorHeaps &heaps,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
     const vk::Image hdr = *swapchain.hdr.handle;
@@ -2758,7 +2758,7 @@ constexpr std::array view_names{
 //   - =   exposure, half a stop darker or brighter: like a camera's
 //         exposure compensation, + is brighter
 // Holding a key repeats it.
-bool poll_events(SDL_Window* window, CameraInput& input, Settings& settings) {
+bool poll_events(SDL_Window *window, CameraInput &input, Settings &settings) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -2902,12 +2902,12 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             // Host-coherent: the CPU's writes reach the GPU without a flush.
             Buffer data = create_buffer(device, *gpu, sizeof(FrameData),
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
+            auto *mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
 
             frames.push_back(Frame{
                 .commands = std::move(commands),
@@ -2935,7 +2935,7 @@ int main() {
         // the model matrix itself would tilt it off the surface.
         std::vector<DrawData> draw_data;
 
-        for (const MeshDraw& draw : scene.draws) {
+        for (const MeshDraw &draw : scene.draws) {
             draw_data.push_back(DrawData{
                 .model = draw.model,
                 .normal_matrix = glm::transpose(glm::inverse(draw.model)),
@@ -2987,7 +2987,7 @@ int main() {
         // The swapchain's images are recreated with it, so their descriptors
         // are rewritten every time: after this, only while the GPU is idle.
         const auto describe_screen = [&] {
-            const auto whole = [](const Image& image, vk::ImageAspectFlags aspect) {
+            const auto whole = [](const Image &image, vk::ImageAspectFlags aspect) {
                 return vk::ImageViewCreateInfo{
                     .image = *image.handle,
                     .viewType = vk::ImageViewType::e2D,
@@ -3033,7 +3033,7 @@ int main() {
         // Heap indices are one past the scene's: image i is texture i + 1 and
         // sampler i is sampler i + 1, so "none" (-1) becomes 0, the white
         // texture or the default sampler.
-        const auto slot = [](const TextureRef& ref) {
+        const auto slot = [](const TextureRef &ref) {
             return TextureSlot{
                 .texture = static_cast<std::uint32_t>(ref.image + 1),
                 .sampler = static_cast<std::uint32_t>(ref.sampler + 1),
@@ -3043,7 +3043,7 @@ int main() {
 
         std::vector<Material> materials;
 
-        for (const SceneMaterial& material : scene.materials) {
+        for (const SceneMaterial &material : scene.materials) {
             materials.push_back(Material{
                 .base_color_factor = material.base_color_factor,
                 .emissive_factor = material.emissive_factor,
@@ -3118,7 +3118,7 @@ int main() {
             // Blending mixes with what's already drawn, so see-through draws go
             // back to front: farthest from the camera first. Sorting by each
             // draw's center is approximate, but right for separate objects.
-            std::vector<std::uint32_t>& blended = batches[static_cast<std::size_t>(AlphaMode::blend)];
+            std::vector<std::uint32_t> &blended = batches[static_cast<std::size_t>(AlphaMode::blend)];
 
             std::ranges::sort(blended, std::ranges::greater{}, [&](std::uint32_t i) {
                 const glm::vec3 offset = scene.draws[i].center - camera.position;
@@ -3169,7 +3169,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer and
             //    data from last time, then write this frame's data.
@@ -3269,7 +3269,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

@@ -360,16 +360,16 @@ public:
     ~SdlContext() { SDL_Quit(); }
 
     SdlContext(const SdlContext&) = delete;
-    SdlContext& operator=(const SdlContext&) = delete;
+    SdlContext &operator=(const SdlContext&) = delete;
 
     // "wayland", "x11", "windows", ...
     static std::string_view video_driver() { return SDL_GetCurrentVideoDriver(); }
 
     // Instance extensions the platform needs to present to a window. SDL only
     // knows them once Vulkan is loaded, which creating a Vulkan window does.
-    static std::span<const char* const> required_vulkan_extensions() {
+    static std::span<const char *const> required_vulkan_extensions() {
         std::uint32_t count = 0;
-        const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
+        const char *const *names = SDL_Vulkan_GetInstanceExtensions(&count);
 
         if (!names) {
             throw std::runtime_error(std::string("SDL found no Vulkan support (") + SDL_GetError() + ")");
@@ -384,7 +384,7 @@ public:
 using Window = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>;
 
 // A resizable window that Vulkan can draw into.
-inline Window make_vulkan_window(int width, int height, const char* title, bool visible) {
+inline Window make_vulkan_window(int width, int height, const char *title, bool visible) {
     SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
 
     if (!visible) {
@@ -461,35 +461,35 @@ struct GpuChoice {
 
 // True if VK_LAYER_KHRONOS_validation is installed (it ships with the SDK,
 // or `sudo apt install vulkan-validationlayers`).
-bool validation_layer_available(const vk::raii::Context& context);
+bool validation_layer_available(const vk::raii::Context &context);
 
 // `extensions` are the instance extensions to enable (e.g. from SDL).
 // With `validation`, also enables the validation layer and VK_EXT_debug_utils.
 vk::raii::Instance create_instance(
-    const vk::raii::Context& context,
-    std::span<const char* const> extensions,
+    const vk::raii::Context &context,
+    std::span<const char *const> extensions,
     bool validation
 );
 
 // Prints validation warnings and errors to stderr. Needs an instance
 // created with `validation`.
-vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance& instance);
+vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance &instance);
 
-vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, SDL_Window* window);
+vk::raii::SurfaceKHR create_surface(const vk::raii::Instance &instance, SDL_Window *window);
 
 // --- Device ------------------------------------------------------------------
 
 // Prints every GPU, then picks a Vulkan 1.4 one that can draw and present to
 // `surface` and has everything create_device() turns on, preferring discrete
 // over integrated over everything else.
-std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::raii::SurfaceKHR& surface);
+std::optional<GpuChoice> pick_gpu(const vk::raii::Instance &instance, const vk::raii::SurfaceKHR &surface);
 
 // A logical device with one queue from `gpu.queue_family`, the swapchain and
 // descriptor heap extensions, and every feature the renderer relies on.
-vk::raii::Device create_device(const GpuChoice& gpu);
+vk::raii::Device create_device(const GpuChoice &gpu);
 
 // Prints how big `gpu`'s descriptors are and how big its heaps may get.
-void print_descriptor_heap_properties(const GpuChoice& gpu);
+void print_descriptor_heap_properties(const GpuChoice &gpu);
 ```
 
 `game-engine/src/vulkan_setup.cpp`:
@@ -506,7 +506,7 @@ void print_descriptor_heap_properties(const GpuChoice& gpu);
 
 namespace {
 
-constexpr const char* validation_layer = "VK_LAYER_KHRONOS_validation";
+constexpr const char *validation_layer = "VK_LAYER_KHRONOS_validation";
 
 // --- What the renderer needs from a GPU --------------------------------------
 
@@ -533,7 +533,7 @@ using Features = vk::StructureChain<
 VKAPI_ATTR vk::Bool32 VKAPI_CALL on_validation_message(
     vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
     vk::DebugUtilsMessageTypeFlagsEXT /*types*/,
-    const vk::DebugUtilsMessengerCallbackDataEXT* data,
+    const vk::DebugUtilsMessengerCallbackDataEXT *data,
     void* /*user_data*/
 ) {
     std::println(stderr, "[validation {}] {}", vk::to_string(severity), data->pMessage);
@@ -549,11 +549,11 @@ int rank(vk::PhysicalDeviceType type) {
     }
 }
 
-bool has_extensions(const vk::raii::PhysicalDevice& device) {
+bool has_extensions(const vk::raii::PhysicalDevice &device) {
     const std::vector<vk::ExtensionProperties> available = device.enumerateDeviceExtensionProperties();
 
     return std::ranges::all_of(device_extensions, [&](std::string_view name) {
-        return std::ranges::any_of(available, [&](const vk::ExtensionProperties& extension) {
+        return std::ranges::any_of(available, [&](const vk::ExtensionProperties &extension) {
             return name == extension.extensionName.data();
         });
     });
@@ -561,7 +561,7 @@ bool has_extensions(const vk::raii::PhysicalDevice& device) {
 
 // Only valid once has_extensions() is true: the extension structs in the
 // chain may not be queried on a device that lacks their extension.
-bool has_features(const vk::raii::PhysicalDevice& device) {
+bool has_features(const vk::raii::PhysicalDevice &device) {
     const Features supported = device.getFeatures2<
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan12Features,
@@ -570,8 +570,8 @@ bool has_features(const vk::raii::PhysicalDevice& device) {
         vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR
     >();
 
-    const auto& vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
-    const auto& vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
+    const auto &vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
+    const auto &vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
 
     return supported.get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy
         && vulkan12.bufferDeviceAddress
@@ -586,15 +586,15 @@ bool has_features(const vk::raii::PhysicalDevice& device) {
 
 // --- Instance ----------------------------------------------------------------
 
-bool validation_layer_available(const vk::raii::Context& context) {
-    return std::ranges::any_of(context.enumerateInstanceLayerProperties(), [](const vk::LayerProperties& layer) {
+bool validation_layer_available(const vk::raii::Context &context) {
+    return std::ranges::any_of(context.enumerateInstanceLayerProperties(), [](const vk::LayerProperties &layer) {
         return std::string_view(layer.layerName.data()) == validation_layer;
     });
 }
 
 vk::raii::Instance create_instance(
-    const vk::raii::Context& context,
-    std::span<const char* const> extensions,
+    const vk::raii::Context &context,
+    std::span<const char *const> extensions,
     bool validation
 ) {
     std::vector<const char*> enabled_extensions(extensions.begin(), extensions.end());
@@ -626,7 +626,7 @@ vk::raii::Instance create_instance(
     return vk::raii::Instance(context, create_info);
 }
 
-vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance& instance) {
+vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance &instance) {
     using Severity = vk::DebugUtilsMessageSeverityFlagBitsEXT;
     using Type = vk::DebugUtilsMessageTypeFlagBitsEXT;
 
@@ -639,7 +639,7 @@ vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance
     return vk::raii::DebugUtilsMessengerEXT(instance, create_info);
 }
 
-vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, SDL_Window* window) {
+vk::raii::SurfaceKHR create_surface(const vk::raii::Instance &instance, SDL_Window *window) {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 
     // SDL speaks the C API, so hand it the raw handle and wrap the result.
@@ -652,11 +652,11 @@ vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, SDL_Wind
 
 // --- Picking a GPU -----------------------------------------------------------
 
-std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::raii::SurfaceKHR& surface) {
+std::optional<GpuChoice> pick_gpu(const vk::raii::Instance &instance, const vk::raii::SurfaceKHR &surface) {
     std::optional<GpuChoice> best;
     int best_rank = -1;
 
-    for (const vk::raii::PhysicalDevice& device : instance.enumeratePhysicalDevices()) {
+    for (const vk::raii::PhysicalDevice &device : instance.enumeratePhysicalDevices()) {
         const vk::PhysicalDeviceProperties properties = device.getProperties();
         const std::vector<vk::QueueFamilyProperties> families = device.getQueueFamilyProperties();
 
@@ -704,7 +704,7 @@ std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::
 
 // --- Logical device ----------------------------------------------------------
 
-vk::raii::Device create_device(const GpuChoice& gpu) {
+vk::raii::Device create_device(const GpuChoice &gpu) {
     const float priority = 1.0f;
 
     const vk::DeviceQueueCreateInfo queue_info{
@@ -748,12 +748,12 @@ vk::raii::Device create_device(const GpuChoice& gpu) {
 
 // --- Descriptor heap limits --------------------------------------------------
 
-void print_descriptor_heap_properties(const GpuChoice& gpu) {
+void print_descriptor_heap_properties(const GpuChoice &gpu) {
     const auto properties = gpu.device.getProperties2<
         vk::PhysicalDeviceProperties2,
         vk::PhysicalDeviceDescriptorHeapPropertiesEXT
     >();
-    const auto& heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
+    const auto &heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
 
     std::println("Descriptor heap:");
     std::println("  image descriptor    {:>4} bytes, {:>3}-byte aligned", heap.imageDescriptorSize, heap.imageDescriptorAlignment);
@@ -806,20 +806,20 @@ struct Swapchain {
 };
 
 Swapchain create_swapchain(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 );
 
 // Rebuilds `swapchain` for the window's current size (after a resize).
 // Waits for the GPU to go idle first.
 void recreate_swapchain(
-    Swapchain& swapchain,
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    Swapchain &swapchain,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 );
 ```
 
@@ -834,10 +834,10 @@ namespace {
 
 // --- Choosing the swapchain's settings ---------------------------------------
 
-vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR>& formats) {
+vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR> &formats) {
     // 8-bit BGRA with sRGB encoding: shaders write linear colors and the GPU
     // encodes them to sRGB on the way out. Otherwise take what the surface offers.
-    for (const vk::SurfaceFormatKHR& format : formats) {
+    for (const vk::SurfaceFormatKHR &format : formats) {
         if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
             return format;
         }
@@ -846,7 +846,7 @@ vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR>& form
     return formats.front();
 }
 
-vk::Extent2D choose_extent(const vk::SurfaceCapabilitiesKHR& capabilities, int width, int height) {
+vk::Extent2D choose_extent(const vk::SurfaceCapabilitiesKHR &capabilities, int width, int height) {
     // Most platforms dictate the size. Wayland reports 0xFFFFFFFF and lets us pick.
     if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
         return capabilities.currentExtent;
@@ -872,10 +872,10 @@ vk::CompositeAlphaFlagBitsKHR choose_composite_alpha(vk::CompositeAlphaFlagsKHR 
 // --- Building one ------------------------------------------------------------
 
 Swapchain build(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window,
     vk::SwapchainKHR old_swapchain
 ) {
     Swapchain swapchain;
@@ -939,20 +939,20 @@ Swapchain build(
 // --- Create and recreate -----------------------------------------------------
 
 Swapchain create_swapchain(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 ) {
     return build(device, gpu, surface, window, nullptr);
 }
 
 void recreate_swapchain(
-    Swapchain& swapchain,
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    Swapchain &swapchain,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 ) {
     // Nothing may still be using the old images, views or semaphores.
     device.waitIdle();
@@ -1023,7 +1023,7 @@ struct Frame {
 
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -1059,8 +1059,8 @@ void transition(
 
 // Records: swapchain image -> clear to `color` -> ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
     std::array<float, 4> color
 ) {
@@ -1187,7 +1187,7 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             frames.push_back(Frame{
                 .commands = std::move(commands),
                 .image_acquired = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{}),
@@ -1216,7 +1216,7 @@ int main() {
                 recreate_swapchain(swapchain, device, *gpu, surface, window.get());
             }
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer from last time.
             (void)device.waitForFences(*frame.done, vk::True, no_timeout);
@@ -1278,7 +1278,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

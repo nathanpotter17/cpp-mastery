@@ -343,7 +343,7 @@ struct Scene {
 
 // Loads the default scene of a .gltf or .glb file, with its materials,
 // samplers, lights and images, still encoded.
-Scene load_gltf(const std::filesystem::path& path);
+Scene load_gltf(const std::filesystem::path &path);
 ```
 
 In `game-engine/src/scene.cpp`, add `#include <cmath>` after `#include <algorithm>`.
@@ -354,7 +354,7 @@ In `game-engine/src/scene.cpp`, add this section before `// --- Nodes`:
 
 // A KHR_lights_punctual light, placed by its node's world transform. The
 // light sits at the node's origin and shines down the node's -Z axis.
-std::optional<Light> world_light(const tinygltf::Light& source, const glm::mat4& world) {
+std::optional<Light> world_light(const tinygltf::Light &source, const glm::mat4 &world) {
     const glm::vec3 color = source.color.size() == 3 ? glm::vec3(glm::make_vec3(source.color.data())) : glm::vec3(1.0f);
 
     Light light{
@@ -393,20 +393,20 @@ In `game-engine/src/scene.cpp`, replace `visit_node` with:
 // own; every primitive of a node's mesh becomes one draw, and a node's light
 // is placed by the same transform.
 void visit_node(
-    const tinygltf::Model& model,
+    const tinygltf::Model &model,
     int node_index,
-    const glm::mat4& parent,
-    const std::vector<std::vector<LoadedPrimitive>>& mesh_primitives,
-    Scene& scene
+    const glm::mat4 &parent,
+    const std::vector<std::vector<LoadedPrimitive>> &mesh_primitives,
+    Scene &scene
 ) {
-    const tinygltf::Node& node = model.nodes.at(node_index);
+    const tinygltf::Node &node = model.nodes.at(node_index);
     const glm::mat4 world = parent * local_transform(node);
 
     if (node.mesh >= 0) {
         // A negative determinant means the transform mirrors space.
         const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0f;
 
-        for (const LoadedPrimitive& primitive : mesh_primitives.at(node.mesh)) {
+        for (const LoadedPrimitive &primitive : mesh_primitives.at(node.mesh)) {
             const glm::vec3 local_center = (primitive.local_min + primitive.local_max) * 0.5f;
 
             scene.draws.push_back(MeshDraw{
@@ -660,30 +660,30 @@ struct Swapchain {
 };
 
 Swapchain create_swapchain(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 );
 
 // Rebuilds `swapchain` for the window's current size (after a resize).
 // Waits for the GPU to go idle first.
 void recreate_swapchain(
-    Swapchain& swapchain,
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    Swapchain &swapchain,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 );
 ```
 
 In `game-engine/src/swapchain.cpp`, replace `build` with:
 ```cpp
 Swapchain build(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window,
     vk::SwapchainKHR old_swapchain
 ) {
     Swapchain swapchain;
@@ -753,11 +753,11 @@ Swapchain build(
 Then replace `recreate_swapchain` with:
 ```cpp
 void recreate_swapchain(
-    Swapchain& swapchain,
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    Swapchain &swapchain,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 ) {
     // Nothing may still be using the old images, views or semaphores.
     device.waitIdle();
@@ -812,7 +812,7 @@ The tone-mapping shader reads the HDR image through the descriptor heap, like an
 // so it's uploaded once to device-local memory.
 struct DescriptorHeaps {
     Buffer resources;
-    std::byte* resource_bytes = nullptr;       // the resource heap, mapped
+    std::byte *resource_bytes = nullptr;       // the resource heap, mapped
     vk::DeviceSize image_descriptor_size = 0;  // bytes per slot
     std::uint32_t resource_slots = 0;          // slots before the reserved range
     vk::DeviceSize resource_reserved_offset = 0;
@@ -829,10 +829,10 @@ struct DescriptorHeaps {
 //   - Sampler heap: index 0 is a default sampler; scene sampler i is at
 //     index i + 1.
 DescriptorHeaps create_descriptor_heaps(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const Texture> textures,
     std::span<const SceneSampler> samplers,
     std::uint32_t extra_slots
@@ -842,14 +842,14 @@ DescriptorHeaps create_descriptor_heaps(
 // which shaders read as a Texture2D (or TextureCube, ...) handle with that
 // index. The GPU must not be reading the slot while it's written.
 void write_image_descriptor(
-    const vk::raii::Device& device,
-    DescriptorHeaps& heaps,
+    const vk::raii::Device &device,
+    DescriptorHeaps &heaps,
     std::uint32_t slot,
-    const vk::ImageViewCreateInfo& view
+    const vk::ImageViewCreateInfo &view
 );
 
 // Makes `heaps` the ones shaders read for the rest of `commands`.
-void bind_descriptor_heaps(const vk::raii::CommandBuffer& commands, const DescriptorHeaps& heaps);
+void bind_descriptor_heaps(const vk::raii::CommandBuffer &commands, const DescriptorHeaps &heaps);
 ```
 
 `game-engine/src/descriptor_heap.cpp`:
@@ -868,7 +868,7 @@ vk::DeviceSize align_up(vk::DeviceSize value, vk::DeviceSize alignment) {
 }
 
 // Heaps must start at a multiple of `alignment` in GPU memory.
-void check_heap_alignment(const Buffer& heap, vk::DeviceSize alignment) {
+void check_heap_alignment(const Buffer &heap, vk::DeviceSize alignment) {
     if (heap.address % alignment != 0) {
         throw std::runtime_error("a descriptor heap's address isn't aligned to " + std::to_string(alignment) + " bytes");
     }
@@ -877,7 +877,7 @@ void check_heap_alignment(const Buffer& heap, vk::DeviceSize alignment) {
 // Memory for the resource heap: the CPU writes it, the GPU reads it. Memory
 // that's both device-local and host-visible (resizable BAR) is fastest for
 // the GPU to read; without it, plain host-visible memory works too.
-vk::MemoryPropertyFlags heap_memory(const GpuChoice& gpu) {
+vk::MemoryPropertyFlags heap_memory(const GpuChoice &gpu) {
     const vk::MemoryPropertyFlags best = vk::MemoryPropertyFlagBits::eDeviceLocal
         | vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
     const vk::PhysicalDeviceMemoryProperties memory = gpu.device.getMemoryProperties();
@@ -897,7 +897,7 @@ vk::MemoryPropertyFlags heap_memory(const GpuChoice& gpu) {
 // whose minifying filters name two things at once: how to filter within a
 // mip level, and how to pick between levels. Filters the file leaves out
 // get our best quality: trilinear and anisotropic.
-vk::SamplerCreateInfo sampler_info(const SceneSampler& sampler, float max_anisotropy) {
+vk::SamplerCreateInfo sampler_info(const SceneSampler &sampler, float max_anisotropy) {
     constexpr int nearest = 9728;
     constexpr int linear = 9729;
     constexpr int nearest_mipmap_nearest = 9984;
@@ -945,10 +945,10 @@ vk::SamplerCreateInfo sampler_info(const SceneSampler& sampler, float max_anisot
 // --- Writing descriptors -----------------------------------------------------
 
 void write_image_descriptor(
-    const vk::raii::Device& device,
-    DescriptorHeaps& heaps,
+    const vk::raii::Device &device,
+    DescriptorHeaps &heaps,
     std::uint32_t slot,
-    const vk::ImageViewCreateInfo& view
+    const vk::ImageViewCreateInfo &view
 ) {
     if (slot >= heaps.resource_slots) {
         throw std::runtime_error("resource heap slot " + std::to_string(slot) + " is past the last one");
@@ -980,10 +980,10 @@ void write_image_descriptor(
 // --- Creating the heaps ------------------------------------------------------
 
 DescriptorHeaps create_descriptor_heaps(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const Texture> textures,
     std::span<const SceneSampler> samplers,
     std::uint32_t extra_slots
@@ -992,8 +992,8 @@ DescriptorHeaps create_descriptor_heaps(
         vk::PhysicalDeviceProperties2,
         vk::PhysicalDeviceDescriptorHeapPropertiesEXT
     >();
-    const auto& heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
-    const auto& limits = properties.get<vk::PhysicalDeviceProperties2>().properties.limits;
+    const auto &heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
+    const auto &limits = properties.get<vk::PhysicalDeviceProperties2>().properties.limits;
 
     DescriptorHeaps heaps;
 
@@ -1034,7 +1034,7 @@ DescriptorHeaps create_descriptor_heaps(
     // and repeating.
     std::vector<vk::SamplerCreateInfo> sampler_infos{sampler_info(SceneSampler{}, limits.maxSamplerAnisotropy)};
 
-    for (const SceneSampler& sampler : samplers) {
+    for (const SceneSampler &sampler : samplers) {
         sampler_infos.push_back(sampler_info(sampler, limits.maxSamplerAnisotropy));
     }
 
@@ -1063,7 +1063,7 @@ DescriptorHeaps create_descriptor_heaps(
 
 // --- Binding -----------------------------------------------------------------
 
-void bind_descriptor_heaps(const vk::raii::CommandBuffer& commands, const DescriptorHeaps& heaps) {
+void bind_descriptor_heaps(const vk::raii::CommandBuffer &commands, const DescriptorHeaps &heaps) {
     commands.bindResourceHeapEXT(vk::BindHeapInfoEXT{
         .heapRange = {.address = heaps.resources.address, .size = heaps.resources.size},
         .reservedRangeOffset = heaps.resource_reserved_offset,
@@ -1191,10 +1191,10 @@ static const uint view_emissive = 7;
 // the pointers land on 8-byte boundaries, right after the matrix.
 struct FrameData {
     float4x4 view_projection;  // world space -> clip space
-    Vertex* vertices;          // the scene's vertices
-    DrawData* draws;           // one DrawData per draw
-    Material* materials;       // the scene's materials
-    Light* lights;             // the file's lights
+    Vertex *vertices;          // the scene's vertices
+    DrawData *draws;           // one DrawData per draw
+    Material *materials;       // the scene's materials
+    Light *lights;             // the file's lights
     float3 camera_position;
     float exposure;            // scene nits -> tone mapper input
     float3 sun_direction;      // toward the sun
@@ -1207,7 +1207,7 @@ struct FrameData {
 
 // Written with vkCmdPushDataEXT before each draw.
 struct PushData {
-    FrameData* frame;  // this frame's data
+    FrameData *frame;  // this frame's data
     uint draw_index;   // which DrawData this draw uses
 };
 
@@ -1247,7 +1247,7 @@ struct VertexOutput {
 // that primitive's vertices begin in the shared buffer.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Vertex vertex = frame.vertices[vertex_id];
     const DrawData draw = frame.draws[push.draw_index];
 
@@ -1464,7 +1464,7 @@ float3 punctual_light(Light light, float3 position, out float3 l) {
 // The sky's brightness in direction `d`: a bright sky above and a darker
 // ground below, blended across the horizon. Chapter 8 replaces this with
 // an image of the whole sky.
-float3 ambient_radiance(FrameData* frame, float3 d) {
+float3 ambient_radiance(FrameData *frame, float3 d) {
     return lerp(frame.ground_radiance, frame.sky_radiance, 0.5 + 0.5 * d.y);
 }
 
@@ -1475,7 +1475,7 @@ float3 ambient_radiance(FrameData* frame, float3 d) {
 //     rough one blurs it, so the ray bends toward the normal as roughness
 //     grows. Fresnel, with a roughness-aware version of Schlick's formula,
 //     splits the light between the two parts.
-float3 shade_ambient(Surface surface, FrameData* frame, float roughness) {
+float3 shade_ambient(Surface surface, FrameData *frame, float roughness) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
     const float3 f0 = lerp(float3(0.04), surface.base_color, surface.metallic);
     const float3 fresnel = f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(1.0 - n_dot_v, 5.0);
@@ -1496,7 +1496,7 @@ float3 shade_ambient(Surface surface, FrameData* frame, float roughness) {
 // SV_IsFrontFace: whether this triangle faces the camera.
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[push.draw_index].material];
 
     // Base color: factor x texture x vertex color. sRGB textures are decoded
@@ -1679,14 +1679,14 @@ float4 fragmentMain(float4 position : SV_Position) : SV_Target {
 #include <vector>
 
 // A .spv file as the 32-bit words SPIR-V is made of.
-std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path);
+std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path);
 
 // Draws shaders/mesh.slang into a `color_format` image, depth-tested against
 // a `depth_format` depth buffer, for materials with alpha mode `alpha_mode`.
 // There is no pipeline layout: shaders find their resources in the
 // descriptor heap. Cull mode and front face are set per draw.
 vk::raii::Pipeline create_mesh_pipeline(
-    const vk::raii::Device& device,
+    const vk::raii::Device &device,
     vk::Format color_format,
     vk::Format depth_format,
     AlphaMode alpha_mode
@@ -1694,14 +1694,14 @@ vk::raii::Pipeline create_mesh_pipeline(
 
 // Draws shaders/tonemap.slang as one full-screen triangle into a
 // `color_format` image: no vertex data, no depth, nothing culled.
-vk::raii::Pipeline create_tonemap_pipeline(const vk::raii::Device& device, vk::Format color_format);
+vk::raii::Pipeline create_tonemap_pipeline(const vk::raii::Device &device, vk::Format color_format);
 ```
 
 At the end of `game-engine/src/pipeline.cpp`, add:
 ```cpp
 // --- The tone-mapping pipeline -----------------------------------------------
 
-vk::raii::Pipeline create_tonemap_pipeline(const vk::raii::Device& device, vk::Format color_format) {
+vk::raii::Pipeline create_tonemap_pipeline(const vk::raii::Device &device, vk::Format color_format) {
     const std::vector<std::uint32_t> spirv = read_spirv(std::filesystem::path(SHADER_DIR) / "tonemap.spv");
 
     const vk::raii::ShaderModule module(device, vk::ShaderModuleCreateInfo{
@@ -1863,7 +1863,7 @@ struct Frame {
     vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
     vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     Buffer data;                                   // one FrameData, host-visible
-    FrameData* mapped = nullptr;                   // `data`, mapped for the CPU to write
+    FrameData *mapped = nullptr;                   // `data`, mapped for the CPU to write
 };
 
 // --- Recording a frame -------------------------------------------------------
@@ -1871,7 +1871,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -1938,13 +1938,13 @@ struct DrawList {
 //   2. tone mapping, from the HDR image into the swapchain image, which is
 //      then ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
     std::span<const vk::raii::Pipeline> pipelines,
-    const vk::raii::Pipeline& tonemap_pipeline,
-    const DescriptorHeaps& heaps,
-    const DrawList& draws
+    const vk::raii::Pipeline &tonemap_pipeline,
+    const DescriptorHeaps &heaps,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
     const vk::Image hdr = *swapchain.hdr.handle;
@@ -2027,9 +2027,9 @@ void record_frame(
         commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines[mode]);
 
         for (const std::uint32_t i : draws.batches[mode]) {
-            const MeshDraw& mesh_draw = draws.mesh_draws[i];
-            const Primitive& primitive = draws.primitives[mesh_draw.primitive];
-            const SceneMaterial& material = draws.scene_materials[primitive.material];
+            const MeshDraw &mesh_draw = draws.mesh_draws[i];
+            const Primitive &primitive = draws.primitives[mesh_draw.primitive];
+            const SceneMaterial &material = draws.scene_materials[primitive.material];
 
             // Single-sided surfaces are invisible from behind, so the GPU can
             // skip their back faces before running the fragment shader.
@@ -2123,7 +2123,7 @@ constexpr std::array view_names{
 //   - =   exposure, half a stop darker or brighter: like a camera's
 //         exposure compensation, + is brighter
 // Holding a key repeats it.
-bool poll_events(SDL_Window* window, CameraInput& input, Settings& settings) {
+bool poll_events(SDL_Window *window, CameraInput &input, Settings &settings) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -2254,12 +2254,12 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             // Host-coherent: the CPU's writes reach the GPU without a flush.
             Buffer data = create_buffer(device, *gpu, sizeof(FrameData),
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
+            auto *mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
 
             frames.push_back(Frame{
                 .commands = std::move(commands),
@@ -2287,7 +2287,7 @@ int main() {
         // the model matrix itself would tilt it off the surface.
         std::vector<DrawData> draw_data;
 
-        for (const MeshDraw& draw : scene.draws) {
+        for (const MeshDraw &draw : scene.draws) {
             draw_data.push_back(DrawData{
                 .model = draw.model,
                 .normal_matrix = glm::transpose(glm::inverse(draw.model)),
@@ -2354,7 +2354,7 @@ int main() {
         // Heap indices are one past the scene's: image i is texture i + 1 and
         // sampler i is sampler i + 1, so "none" (-1) becomes 0, the white
         // texture or the default sampler.
-        const auto slot = [](const TextureRef& ref) {
+        const auto slot = [](const TextureRef &ref) {
             return TextureSlot{
                 .texture = static_cast<std::uint32_t>(ref.image + 1),
                 .sampler = static_cast<std::uint32_t>(ref.sampler + 1),
@@ -2364,7 +2364,7 @@ int main() {
 
         std::vector<Material> materials;
 
-        for (const SceneMaterial& material : scene.materials) {
+        for (const SceneMaterial &material : scene.materials) {
             materials.push_back(Material{
                 .base_color_factor = material.base_color_factor,
                 .emissive_factor = material.emissive_factor,
@@ -2438,7 +2438,7 @@ int main() {
             // Blending mixes with what's already drawn, so see-through draws go
             // back to front: farthest from the camera first. Sorting by each
             // draw's center is approximate, but right for separate objects.
-            std::vector<std::uint32_t>& blended = batches[static_cast<std::size_t>(AlphaMode::blend)];
+            std::vector<std::uint32_t> &blended = batches[static_cast<std::size_t>(AlphaMode::blend)];
 
             std::ranges::sort(blended, std::ranges::greater{}, [&](std::uint32_t i) {
                 const glm::vec3 offset = scene.draws[i].center - camera.position;
@@ -2466,7 +2466,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer and
             //    data from last time, then write this frame's data.
@@ -2559,7 +2559,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

@@ -42,7 +42,7 @@ int count_alive(std::span<const bool> cells) {
     return static_cast<int>(std::ranges::count(cells, true));
 }
 
-void place(Grid& grid, std::span<const std::string_view> pattern, int x, int y) {
+void place(Grid &grid, std::span<const std::string_view> pattern, int x, int y) {
     // Spelled out with iterators, this is what a range-for loop does:
     // begin() points at the first element, end() one past the last.
     for (auto row = pattern.begin(); row != pattern.end(); ++row) {
@@ -56,7 +56,7 @@ void place(Grid& grid, std::span<const std::string_view> pattern, int x, int y) 
 
 // --- One generation ----------------------------------------------------------
 
-Grid step(const Grid& grid) {
+Grid step(const Grid &grid) {
     Grid next;
 
     for (int y = 0; y < Grid::height; ++y) {
@@ -80,7 +80,7 @@ Grid step(const Grid& grid) {
 
 // --- Text --------------------------------------------------------------------
 
-std::string render(const Grid& grid) {
+std::string render(const Grid &grid) {
     std::string text;
     // One allocation up front: each row is width characters plus a '\n'.
     text.reserve(static_cast<std::size_t>((Grid::width + 1) * Grid::height));

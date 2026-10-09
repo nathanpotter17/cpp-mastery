@@ -7,31 +7,31 @@
 // One function name, one version per parameter type. The compiler picks the
 // version whose parameter matches the argument's type, so calling type_name
 // on any expression tells us what type that expression has.
-constexpr const char* type_name(bool) {
+constexpr const char *type_name(bool) {
     return "bool";
 }
 
-constexpr const char* type_name(char) {
+constexpr const char *type_name(char) {
     return "char";
 }
 
-constexpr const char* type_name(int) {
+constexpr const char *type_name(int) {
     return "int";
 }
 
-constexpr const char* type_name(unsigned int) {
+constexpr const char *type_name(unsigned int) {
     return "unsigned int";
 }
 
-constexpr const char* type_name(long long) {
+constexpr const char *type_name(long long) {
     return "long long";
 }
 
-constexpr const char* type_name(float) {
+constexpr const char *type_name(float) {
     return "float";
 }
 
-constexpr const char* type_name(double) {
+constexpr const char *type_name(double) {
     return "double";
 }
 
@@ -117,7 +117,7 @@ constexpr int periods_per_year(Frequency frequency) {
 
 static_assert(periods_per_year(Frequency::monthly) == 12);
 
-constexpr const char* name(Frequency frequency) {
+constexpr const char *name(Frequency frequency) {
     switch (frequency) {
         case Frequency::monthly:
             return "monthly";
@@ -233,7 +233,7 @@ Payoff pay_off_early(Loan loan, double extra) {
 // --- Printing loans ----------------------------------------------------------
 
 // A default argument: print_loan(title, loan) means print_loan(title, loan, 1).
-void print_loan(const char* title, loan::Loan loan, int every_years = 1) {
+void print_loan(const char *title, loan::Loan loan, int every_years = 1) {
     std::println("{}: {:.2f} at {:.2f}% for {} years, {}", title, loan.principal, loan.annual_rate * 100.0, loan.years, loan::name(loan.frequency));
     std::println("  {} payments of {:.2f}", loan.periods(), loan::payment(loan));
     loan::print_schedule(loan, every_years);

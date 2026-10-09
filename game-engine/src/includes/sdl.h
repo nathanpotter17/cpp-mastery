@@ -25,13 +25,13 @@ class SdlContext {
         ~SdlContext() { SDL_Quit(); }
 
         SdlContext(const SdlContext&) = delete;
-        SdlContext& operator=(const SdlContext&) = delete;
+        SdlContext &operator=(const SdlContext&) = delete;
 
         static std::string_view video_driver() { return SDL_GetCurrentVideoDriver(); }
 
-        static std::span<const char* const> required_vulkan_extensions() {
+        static std::span<const char *const> required_vulkan_extensions() {
             std::uint32_t count = 0;
-            const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
+            const char *const *names = SDL_Vulkan_GetInstanceExtensions(&count);
 
             if (!names) {
                 throw std::runtime_error(std::string("SDL found no Vulkan support: (") + SDL_GetError() + ")");
@@ -43,7 +43,7 @@ class SdlContext {
 
 using Window = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>;
 
-inline Window make_vulkan_window(int width, int height, const char* title, bool visible) {
+inline Window make_vulkan_window(int width, int height, const char *title, bool visible) {
     SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
 
     if (!visible) {

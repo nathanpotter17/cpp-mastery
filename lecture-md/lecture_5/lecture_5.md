@@ -59,11 +59,11 @@ struct Image {
     int height = 0;
     std::vector<std::uint8_t> pixels;
 
-    std::uint8_t* at(int x, int y) {
+    std::uint8_t *at(int x, int y) {
         return pixels.data() + (static_cast<std::size_t>(y) * width + x) * 3;
     }
 
-    const std::uint8_t* at(int x, int y) const {
+    const std::uint8_t *at(int x, int y) const {
         return pixels.data() + (static_cast<std::size_t>(y) * width + x) * 3;
     }
 };
@@ -74,7 +74,7 @@ inline Image make_gradient(int width, int height) {
 
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            std::uint8_t* pixel = image.at(x, y);
+            std::uint8_t *pixel = image.at(x, y);
             pixel[0] = static_cast<std::uint8_t>(x * 255 / (width - 1));
             pixel[1] = static_cast<std::uint8_t>(y * 255 / (height - 1));
             pixel[2] = 128;
@@ -86,7 +86,7 @@ inline Image make_gradient(int width, int height) {
 
 // LodePNG returns 0 on success, or an error code that lodepng_error_text() describes.
 // LCT_RGB: our pixels are 3 bytes each.
-inline std::expected<void, std::string> write_png(const Image& image, const std::filesystem::path& path) {
+inline std::expected<void, std::string> write_png(const Image &image, const std::filesystem::path &path) {
     const auto width = static_cast<unsigned>(image.width);
     const auto height = static_cast<unsigned>(image.height);
 
@@ -97,7 +97,7 @@ inline std::expected<void, std::string> write_png(const Image& image, const std:
     return {};
 }
 
-inline std::expected<Image, std::string> load_png(const std::filesystem::path& path) {
+inline std::expected<Image, std::string> load_png(const std::filesystem::path &path) {
     std::vector<std::uint8_t> pixels;
     unsigned width = 0;
     unsigned height = 0;
@@ -161,7 +161,7 @@ int main() {
     }
 
     for (auto [x, y] : {std::pair{0, 0}, {63, 0}, {0, 47}, {63, 47}}) {
-        const auto* pixel = loaded->at(x, y);
+        const auto *pixel = loaded->at(x, y);
         std::println("  pixel ({:2}, {:2}) = rgb({:3}, {:3}, {:3})", x, y, pixel[0], pixel[1], pixel[2]);
     }
 

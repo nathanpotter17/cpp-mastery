@@ -21,7 +21,7 @@ void demo_c_arrays() {
 
     // An array converts ("decays") to a pointer to its first element, and
     // the pointer has no idea how many elements follow.
-    const std::string_view* first = patterns::glider;
+    const std::string_view *first = patterns::glider;
     std::println("    as a pointer: {} bytes, first row {:?}, row count lost", sizeof(first), *first);
 
     // A span keeps the pointer and the count together.
@@ -52,7 +52,7 @@ void demo_std_array() {
 
 // --- std::span ---------------------------------------------------------------
 
-void demo_spans(const Grid& grid) {
+void demo_spans(const Grid &grid) {
     std::println("std::span:");
 
     // A fixed-extent span knows its size at compile time, so it stores only
@@ -70,7 +70,7 @@ void demo_spans(const Grid& grid) {
 
 // --- std::string and std::string_view ----------------------------------------
 
-void demo_strings(const Grid& grid) {
+void demo_strings(const Grid &grid) {
     std::println("std::string and std::string_view:");
 
     // A std::string owns its characters, and frees them when it's destroyed.
@@ -98,7 +98,7 @@ struct Cycle {
     std::size_t period = 0; // generations per cycle; 0 if none was found
 };
 
-Cycle find_cycle(Grid grid, std::vector<Grid>& history, std::size_t limit) {
+Cycle find_cycle(Grid grid, std::vector<Grid> &history, std::size_t limit) {
     for (std::size_t generation = 0; generation < limit; ++generation) {
         // Use the iterator before push_back: a push_back that grows the
         // vector moves every element, and old iterators would dangle.
@@ -123,14 +123,14 @@ Cycle find_cycle(Grid grid, std::vector<Grid>& history, std::size_t limit) {
 void print_side_by_side(std::span<const Grid> frames) {
     std::vector<std::string> texts;
     texts.reserve(frames.size());
-    for (const Grid& frame : frames) {
+    for (const Grid &frame : frames) {
         // render returns a temporary string, so push_back moves it in.
         texts.push_back(render(frame));
     }
 
     for (int y = 0; y < Grid::height; ++y) {
         std::string line = "   ";
-        for (const std::string& text : texts) {
+        for (const std::string &text : texts) {
             const auto offset = static_cast<std::size_t>(y * (Grid::width + 1));
             line += ' ';
             line += std::string_view{text}.substr(offset, Grid::width);
@@ -166,7 +166,7 @@ int main() {
         {"glider", patterns::glider},
     };
 
-    for (const Start& start : starts) {
+    for (const Start &start : starts) {
         std::println("{}:", start.name);
 
         Grid grid;

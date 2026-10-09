@@ -208,7 +208,7 @@ struct Scene {
 
 // Loads the default scene of a .gltf or .glb file. Images aren't loaded;
 // their file names stay in the file for Chapter 5.
-Scene load_gltf(const std::filesystem::path& path);
+Scene load_gltf(const std::filesystem::path &path);
 ```
 
 `game-engine/src/scene.cpp`:
@@ -241,11 +241,11 @@ namespace {
 // Copies `count` elements of `element_size` bytes, `stride` apart, starting at
 // `offset` in bufferView `view_index`, after checking they fit in the buffer.
 std::vector<unsigned char> copy_elements(
-    const tinygltf::Model& model, int view_index, std::size_t offset,
+    const tinygltf::Model &model, int view_index, std::size_t offset,
     std::size_t count, std::size_t element_size, std::size_t stride
 ) {
-    const tinygltf::BufferView& view = model.bufferViews.at(view_index);
-    const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
+    const tinygltf::BufferView &view = model.bufferViews.at(view_index);
+    const tinygltf::Buffer &buffer = model.buffers.at(view.buffer);
 
     const std::size_t start = view.byteOffset + offset;
     const std::size_t end = count == 0 ? start : start + (count - 1) * stride + element_size;
@@ -267,8 +267,8 @@ std::vector<unsigned char> copy_elements(
 //   - byteStride 0 means elements are packed already; otherwise they're spread out,
 //   - without a bufferView every element starts as zeros,
 //   - a sparse accessor then replaces the elements its index list names.
-std::vector<unsigned char> accessor_elements(const tinygltf::Model& model, int accessor_index) {
-    const tinygltf::Accessor& accessor = model.accessors.at(accessor_index);
+std::vector<unsigned char> accessor_elements(const tinygltf::Model &model, int accessor_index) {
+    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
 
     const int component_size = tinygltf::GetComponentSizeInBytes(static_cast<std::uint32_t>(accessor.componentType));
     const int components = tinygltf::GetNumComponentsInType(static_cast<std::uint32_t>(accessor.type));
@@ -292,7 +292,7 @@ std::vector<unsigned char> accessor_elements(const tinygltf::Model& model, int a
     }
 
     if (accessor.sparse.isSparse) {
-        const auto& sparse = accessor.sparse;
+        const auto &sparse = accessor.sparse;
         const int index_size = tinygltf::GetComponentSizeInBytes(static_cast<std::uint32_t>(sparse.indices.componentType));
         const auto count = static_cast<std::size_t>(sparse.count);
 
@@ -325,8 +325,8 @@ std::vector<unsigned char> accessor_elements(const tinygltf::Model& model, int a
 // Reads an accessor as floats, `components` per element. Besides 32-bit
 // floats, glTF allows integers here (KHR_mesh_quantization), and "normalized"
 // integers mean a fraction of their range: 255 as an unsigned byte is 1.0.
-std::vector<float> read_floats(const tinygltf::Model& model, int accessor_index, int components) {
-    const tinygltf::Accessor& accessor = model.accessors.at(accessor_index);
+std::vector<float> read_floats(const tinygltf::Model &model, int accessor_index, int components) {
+    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
 
     if (tinygltf::GetNumComponentsInType(static_cast<std::uint32_t>(accessor.type)) != components) {
         throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has the wrong number of components");
@@ -358,7 +358,7 @@ std::vector<float> read_floats(const tinygltf::Model& model, int accessor_index,
     return values;
 }
 
-std::vector<glm::vec3> read_vec3(const tinygltf::Model& model, int accessor_index) {
+std::vector<glm::vec3> read_vec3(const tinygltf::Model &model, int accessor_index) {
     const std::vector<float> floats = read_floats(model, accessor_index, 3);
     std::vector<glm::vec3> values(floats.size() / 3);
     std::memcpy(values.data(), floats.data(), floats.size() * sizeof(float));
@@ -367,8 +367,8 @@ std::vector<glm::vec3> read_vec3(const tinygltf::Model& model, int accessor_inde
 
 // Indices may be 8, 16 or 32 bits, even within one file; they're widened to
 // 32 bits so the whole scene can share one index buffer.
-std::vector<std::uint32_t> read_indices(const tinygltf::Model& model, int accessor_index) {
-    const tinygltf::Accessor& accessor = model.accessors.at(accessor_index);
+std::vector<std::uint32_t> read_indices(const tinygltf::Model &model, int accessor_index) {
+    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
     const std::vector<unsigned char> bytes = accessor_elements(model, accessor_index);
     std::vector<std::uint32_t> indices(accessor.count);
 
@@ -402,7 +402,7 @@ struct LoadedPrimitive {
 
 // Turns triangle strips and fans into a plain list of triangles, keeping
 // every triangle's corners in the same winding order.
-std::vector<std::uint32_t> to_triangle_list(int mode, const std::vector<std::uint32_t>& indices) {
+std::vector<std::uint32_t> to_triangle_list(int mode, const std::vector<std::uint32_t> &indices) {
     std::vector<std::uint32_t> list;
 
     for (std::size_t i = 2; i < indices.size(); ++i) {
@@ -421,7 +421,7 @@ std::vector<std::uint32_t> to_triangle_list(int mode, const std::vector<std::uin
 
 // Appends one primitive to the scene. Points, lines, and primitives without
 // positions are skipped, as glTF allows: this renderer draws triangles.
-std::optional<LoadedPrimitive> add_primitive(const tinygltf::Model& model, const tinygltf::Primitive& source, Scene& scene) {
+std::optional<LoadedPrimitive> add_primitive(const tinygltf::Model &model, const tinygltf::Primitive &source, Scene &scene) {
     const auto position = source.attributes.find("POSITION");
     const bool triangles = source.mode == TINYGLTF_MODE_TRIANGLES
         || source.mode == TINYGLTF_MODE_TRIANGLE_STRIP
@@ -493,7 +493,7 @@ std::optional<LoadedPrimitive> add_primitive(const tinygltf::Model& model, const
 
 // A node's transform relative to its parent: either a full matrix, or
 // translation * rotation * scale. glTF stores doubles; we draw with floats.
-glm::mat4 local_transform(const tinygltf::Node& node) {
+glm::mat4 local_transform(const tinygltf::Node &node) {
     if (node.matrix.size() == 16) {
         return glm::mat4(glm::make_mat4(node.matrix.data()));  // column-major, like glm
     }
@@ -506,7 +506,7 @@ glm::mat4 local_transform(const tinygltf::Node& node) {
 
     if (node.rotation.size() == 4) {
         // glTF stores (x, y, z, w); glm's constructor takes w first.
-        const auto& r = node.rotation;
+        const auto &r = node.rotation;
         const glm::quat rotation(static_cast<float>(r[3]), static_cast<float>(r[0]),
             static_cast<float>(r[1]), static_cast<float>(r[2]));
         transform *= glm::mat4_cast(rotation);
@@ -522,17 +522,17 @@ glm::mat4 local_transform(const tinygltf::Node& node) {
 // Walks the node tree. Each node's world transform is its parent's times its
 // own, and every primitive of a node's mesh becomes one draw.
 void visit_node(
-    const tinygltf::Model& model,
+    const tinygltf::Model &model,
     int node_index,
-    const glm::mat4& parent,
-    const std::vector<std::vector<LoadedPrimitive>>& mesh_primitives,
-    Scene& scene
+    const glm::mat4 &parent,
+    const std::vector<std::vector<LoadedPrimitive>> &mesh_primitives,
+    Scene &scene
 ) {
-    const tinygltf::Node& node = model.nodes.at(node_index);
+    const tinygltf::Node &node = model.nodes.at(node_index);
     const glm::mat4 world = parent * local_transform(node);
 
     if (node.mesh >= 0) {
-        for (const LoadedPrimitive& primitive : mesh_primitives.at(node.mesh)) {
+        for (const LoadedPrimitive &primitive : mesh_primitives.at(node.mesh)) {
             scene.draws.push_back(MeshDraw{.model = world, .primitive = primitive.index});
 
             // Grow the scene bounds by the 8 corners of the primitive's box,
@@ -562,8 +562,8 @@ void visit_node(
 // or inside a .glb, and hands them to this callback. We keep the encoded bytes
 // (PNG, JPEG, ...) as they are; Chapter 5 decodes them.
 bool keep_encoded_image(
-    tinygltf::Image* image, int /*image_index*/, std::string* /*error*/, std::string* /*warning*/,
-    int /*required_width*/, int /*required_height*/, const unsigned char* bytes, int size, void* /*user_data*/
+    tinygltf::Image *image, int /*image_index*/, std::string* /*error*/, std::string* /*warning*/,
+    int /*required_width*/, int /*required_height*/, const unsigned char *bytes, int size, void* /*user_data*/
 ) {
     image->image.assign(bytes, bytes + size);
     image->as_is = true;
@@ -574,7 +574,7 @@ bool keep_encoded_image(
 
 // --- Loading -----------------------------------------------------------------
 
-Scene load_gltf(const std::filesystem::path& path) {
+Scene load_gltf(const std::filesystem::path &path) {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
     std::string error;
@@ -601,7 +601,7 @@ Scene load_gltf(const std::filesystem::path& path) {
     // geometry needs a decoder library we don't include, so refuse it clearly
     // instead of reading compressed bytes as vertices. The others change how
     // things look, not where the geometry is, and later chapters handle them.
-    for (const std::string& extension : model.extensionsRequired) {
+    for (const std::string &extension : model.extensionsRequired) {
         if (extension == "KHR_draco_mesh_compression" || extension == "KHR_meshopt_compression"
             || extension == "EXT_meshopt_compression") {
             throw std::runtime_error(path.string() + " needs " + extension + ", which this loader doesn't decode");
@@ -614,7 +614,7 @@ Scene load_gltf(const std::filesystem::path& path) {
     std::vector<std::vector<LoadedPrimitive>> mesh_primitives(model.meshes.size());
 
     for (std::size_t m = 0; m < model.meshes.size(); ++m) {
-        for (const tinygltf::Primitive& primitive : model.meshes[m].primitives) {
+        for (const tinygltf::Primitive &primitive : model.meshes[m].primitives) {
             if (const auto loaded_primitive = add_primitive(model, primitive, scene)) {
                 mesh_primitives[m].push_back(*loaded_primitive);
             }
@@ -626,7 +626,7 @@ Scene load_gltf(const std::filesystem::path& path) {
         throw std::runtime_error(path.string() + " has no scenes");
     }
 
-    const tinygltf::Scene& root = model.scenes.at(model.defaultScene >= 0 ? model.defaultScene : 0);
+    const tinygltf::Scene &root = model.scenes.at(model.defaultScene >= 0 ? model.defaultScene : 0);
 
     for (const int node : root.nodes) {
         visit_node(model, node, glm::mat4{1.0f}, mesh_primitives, scene);
@@ -674,8 +674,8 @@ struct DrawData {
 // Written with vkCmdPushDataEXT before each draw.
 struct PushData {
     float4x4 view_projection;  // world space -> clip space
-    Vertex* vertices;          // the scene's vertices
-    DrawData* draws;           // one DrawData per draw
+    Vertex *vertices;          // the scene's vertices
+    DrawData *draws;           // one DrawData per draw
     uint draw_index;           // which one this draw uses
 };
 
@@ -796,7 +796,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -844,12 +844,12 @@ struct DrawList {
 // Records: swapchain image -> clear color and depth -> draw everything in
 // `draws` with `pipeline` -> ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
     std::array<float, 4> color,
-    const vk::raii::Pipeline& pipeline,
-    const DrawList& draws
+    const vk::raii::Pipeline &pipeline,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
 
@@ -921,7 +921,7 @@ void record_frame(
     // One draw per primitive per node. Push data says which DrawData to use;
     // the primitive's index range and vertex offset go to drawIndexed.
     for (std::uint32_t i = 0; i < draws.mesh_draws.size(); ++i) {
-        const Primitive& primitive = draws.primitives[draws.mesh_draws[i].primitive];
+        const Primitive &primitive = draws.primitives[draws.mesh_draws[i].primitive];
 
         const PushData push{
             .view_projection = draws.view_projection,
@@ -953,7 +953,7 @@ void record_frame(
 
 // Handles every pending event and fills in `input` for this frame. False once
 // the window was closed or Escape pressed.
-bool poll_events(SDL_Window* window, CameraInput& input) {
+bool poll_events(SDL_Window *window, CameraInput &input) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -1059,7 +1059,7 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             frames.push_back(Frame{
                 .commands = std::move(commands),
                 .image_acquired = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{}),
@@ -1083,7 +1083,7 @@ int main() {
         // the model matrix itself would tilt it off the surface.
         std::vector<DrawData> draw_data;
 
-        for (const MeshDraw& draw : scene.draws) {
+        for (const MeshDraw &draw : scene.draws) {
             draw_data.push_back(DrawData{
                 .model = draw.model,
                 .normal_matrix = glm::transpose(glm::inverse(draw.model)),
@@ -1147,7 +1147,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer from last time.
             (void)device.waitForFences(*frame.done, vk::True, no_timeout);
@@ -1209,7 +1209,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

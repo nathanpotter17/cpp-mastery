@@ -125,7 +125,7 @@ struct Vertex {
 struct PushData {
     float4x4 view_projection;  // world space -> clip space
     float4x4 model;            // this object's space -> world space
-    Vertex* vertices;          // device address of the first vertex
+    Vertex *vertices;          // device address of the first vertex
 };
 
 // In a descriptor heap pipeline, the push_constant block is where push data lands.
@@ -213,7 +213,7 @@ In `game-engine/src/buffer.cpp`, make `find_memory_type` public. Delete the `nam
 // host-visible, ...) in one of its heaps. `allowed` is the bitmask a buffer's
 // or image's memory requirements permit; this returns the first allowed type
 // that has every property in `required`.
-std::uint32_t find_memory_type(const GpuChoice& gpu, std::uint32_t allowed, vk::MemoryPropertyFlags required);
+std::uint32_t find_memory_type(const GpuChoice &gpu, std::uint32_t allowed, vk::MemoryPropertyFlags required);
 ```
 
 `game-engine/src/includes/image.h`:
@@ -235,8 +235,8 @@ struct Image {
 // A 2D image in device-local memory, with one mip level, and a view of its
 // `aspect` (color, or depth for a depth buffer).
 Image create_image(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
     vk::Extent2D extent,
     vk::Format format,
     vk::ImageUsageFlags usage,
@@ -253,8 +253,8 @@ Image create_image(
 #include <stdexcept>
 
 Image create_image(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
     vk::Extent2D extent,
     vk::Format format,
     vk::ImageUsageFlags usage,
@@ -349,20 +349,20 @@ struct Swapchain {
 };
 
 Swapchain create_swapchain(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 );
 
 // Rebuilds `swapchain` for the window's current size (after a resize).
 // Waits for the GPU to go idle first.
 void recreate_swapchain(
-    Swapchain& swapchain,
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    Swapchain &swapchain,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 );
 ```
 
@@ -379,10 +379,10 @@ namespace {
 
 // --- Choosing the swapchain's settings ---------------------------------------
 
-vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR>& formats) {
+vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR> &formats) {
     // 8-bit BGRA with sRGB encoding: shaders write linear colors and the GPU
     // encodes them to sRGB on the way out. Otherwise take what the surface offers.
-    for (const vk::SurfaceFormatKHR& format : formats) {
+    for (const vk::SurfaceFormatKHR &format : formats) {
         if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
             return format;
         }
@@ -391,7 +391,7 @@ vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR>& form
     return formats.front();
 }
 
-vk::Extent2D choose_extent(const vk::SurfaceCapabilitiesKHR& capabilities, int width, int height) {
+vk::Extent2D choose_extent(const vk::SurfaceCapabilitiesKHR &capabilities, int width, int height) {
     // Most platforms dictate the size. Wayland reports 0xFFFFFFFF and lets us pick.
     if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
         return capabilities.currentExtent;
@@ -417,10 +417,10 @@ vk::CompositeAlphaFlagBitsKHR choose_composite_alpha(vk::CompositeAlphaFlagsKHR 
 // --- Building one ------------------------------------------------------------
 
 Swapchain build(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window,
     vk::SwapchainKHR old_swapchain
 ) {
     Swapchain swapchain;
@@ -487,20 +487,20 @@ Swapchain build(
 // --- Create and recreate -----------------------------------------------------
 
 Swapchain create_swapchain(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 ) {
     return build(device, gpu, surface, window, nullptr);
 }
 
 void recreate_swapchain(
-    Swapchain& swapchain,
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::SurfaceKHR& surface,
-    SDL_Window* window
+    Swapchain &swapchain,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::SurfaceKHR &surface,
+    SDL_Window *window
 ) {
     // Nothing may still be using the old images, views or semaphores.
     device.waitIdle();
@@ -537,12 +537,12 @@ The depth buffer only does something if the pipeline uses it. The pipeline has t
 #include <vector>
 
 // A .spv file as the 32-bit words SPIR-V is made of.
-std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path);
+std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path);
 
 // Draws shaders/mesh.slang into a `color_format` image, depth-tested against
 // a `depth_format` depth buffer. There is no pipeline layout: shaders will
 // find their resources in the descriptor heap.
-vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device& device, vk::Format color_format, vk::Format depth_format);
+vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device &device, vk::Format color_format, vk::Format depth_format);
 ```
 
 `game-engine/src/pipeline.cpp`:
@@ -555,7 +555,7 @@ vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device& device, vk::Form
 
 // --- Loading SPIR-V ----------------------------------------------------------
 
-std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path) {
+std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path) {
     std::ifstream file(path, std::ios::binary);
 
     if (!file) {
@@ -581,7 +581,7 @@ std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path) {
 
 // --- The mesh pipeline -------------------------------------------------------
 
-vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device& device, vk::Format color_format, vk::Format depth_format) {
+vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device &device, vk::Format color_format, vk::Format depth_format) {
     // Shaders: one module, two entry points picked by name. The module is
     // only needed while the pipeline is built, so it's destroyed on return.
     const std::vector<std::uint32_t> spirv = read_spirv(std::filesystem::path(SHADER_DIR) / "mesh.spv");
@@ -764,7 +764,7 @@ struct FlyCamera {
 
 // Moves and turns `camera` from `input` and the keyboard, `seconds` after
 // the last update.
-void update_camera(FlyCamera& camera, const CameraInput& input, float seconds);
+void update_camera(FlyCamera &camera, const CameraInput &input, float seconds);
 ```
 
 `game-engine/src/camera.cpp`:
@@ -821,7 +821,7 @@ glm::mat4 FlyCamera::projection(float aspect) const {
 
 // --- Controls ----------------------------------------------------------------
 
-void update_camera(FlyCamera& camera, const CameraInput& input, float seconds) {
+void update_camera(FlyCamera &camera, const CameraInput &input, float seconds) {
     const glm::vec3 forward = camera.forward();
     const glm::vec3 right = glm::normalize(glm::cross(forward, world_up));
 
@@ -841,7 +841,7 @@ void update_camera(FlyCamera& camera, const CameraInput& input, float seconds) {
         camera.speed = std::clamp(camera.speed * std::pow(speed_step, input.wheel), min_speed, max_speed);
 
         // Fly: SDL keeps the current up/down state of every key.
-        const bool* keys = SDL_GetKeyboardState(nullptr);
+        const bool *keys = SDL_GetKeyboardState(nullptr);
 
         glm::vec3 direction{0.0f};
         if (keys[SDL_SCANCODE_W]) direction += forward;
@@ -941,7 +941,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -987,12 +987,12 @@ struct DrawList {
 // Records: swapchain image -> clear color and depth -> draw everything in
 // `draws` with `pipeline` -> ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
     std::array<float, 4> color,
-    const vk::raii::Pipeline& pipeline,
-    const DrawList& draws
+    const vk::raii::Pipeline &pipeline,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
 
@@ -1058,7 +1058,7 @@ void record_frame(
 
     // One draw per object: the same vertices, a different model matrix. Push
     // data is copied into the command buffer, so each draw sees its own values.
-    for (const glm::mat4& model : draws.models) {
+    for (const glm::mat4 &model : draws.models) {
         const PushData push{
             .view_projection = draws.view_projection,
             .model = model,
@@ -1108,7 +1108,7 @@ std::array<Vertex, 36> make_cube() {
     std::array<Vertex, 36> vertices{};
     std::size_t next = 0;
 
-    for (const Face& face : faces) {
+    for (const Face &face : faces) {
         // Two triangles per face: corners 0-1-2 and 0-2-3.
         for (const std::size_t corner : {0, 1, 2, 0, 2, 3}) {
             vertices[next++] = Vertex{.position = face.corners[corner], .color = face.color};
@@ -1122,7 +1122,7 @@ std::array<Vertex, 36> make_cube() {
 
 // Handles every pending event and fills in `input` for this frame. False once
 // the window was closed or Escape pressed.
-bool poll_events(SDL_Window* window, CameraInput& input) {
+bool poll_events(SDL_Window *window, CameraInput &input) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -1228,7 +1228,7 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             frames.push_back(Frame{
                 .commands = std::move(commands),
                 .image_acquired = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{}),
@@ -1312,7 +1312,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer from last time.
             (void)device.waitForFences(*frame.done, vk::True, no_timeout);
@@ -1374,7 +1374,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

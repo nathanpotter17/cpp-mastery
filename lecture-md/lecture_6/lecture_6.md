@@ -83,7 +83,7 @@ inline Image make_gradient(int width, int height, Rgb from, Rgb to) {
     return image;
 }
 
-inline Rgb average(const Image& image) {
+inline Rgb average(const Image &image) {
     std::array<std::size_t, 3> sums{};
 
     for (std::size_t i = 0; i < image.pixels.size(); ++i) {
@@ -100,7 +100,7 @@ inline Rgb average(const Image& image) {
 
 // Encodes to PNG in memory rather than to a file. LodePNG returns 0 on
 // success, or an error code that lodepng_error_text() describes.
-inline std::expected<std::vector<std::uint8_t>, std::string> encode_png(const Image& image) {
+inline std::expected<std::vector<std::uint8_t>, std::string> encode_png(const Image &image) {
     const auto width = static_cast<unsigned>(image.width);
     const auto height = static_cast<unsigned>(image.height);
     std::vector<std::uint8_t> png;
@@ -204,14 +204,14 @@ int main() {
 
     try {
         swatches = nlohmann::json::parse(config).at("swatches").get<std::vector<Swatch>>();
-    } catch (const nlohmann::json::exception& e) {
+    } catch (const nlohmann::json::exception &e) {
         std::println(stderr, "Bad config: {}", e.what());
         return EXIT_FAILURE;
     }
 
     auto report = nlohmann::json::array();
 
-    for (const Swatch& swatch : swatches) {
+    for (const Swatch &swatch : swatches) {
         const Image image = make_gradient(swatch.width, swatch.height, swatch.from, swatch.to);
 
         auto png = encode_png(image);
@@ -236,7 +236,7 @@ int main() {
 
     std::println("{}", report.dump(2));
 
-    const bool all_ok = std::ranges::all_of(report, [](const auto& entry) { return entry["round_trip"].template get<bool>(); });
+    const bool all_ok = std::ranges::all_of(report, [](const auto &entry) { return entry["round_trip"].template get<bool>(); });
     return all_ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 ```

@@ -20,12 +20,12 @@ void inspect_copy(Tracer tracer) {
 
 // By reference: the parameter is another name for the caller's object.
 // const: we promise not to change it.
-void inspect_reference(const Tracer& tracer) {
+void inspect_reference(const Tracer &tracer) {
     std::println("    inspecting {} through a reference", tracer.name());
 }
 
 // By pointer: the parameter holds the object's address, or nullptr for "none".
-void inspect_pointer(const Tracer* tracer) {
+void inspect_pointer(const Tracer *tracer) {
     if (tracer == nullptr) {
         std::println("    nothing to inspect");
         return;
@@ -49,10 +49,10 @@ void demo_lifetimes() {
     std::println("References and pointers:");
     int count = 3;
 
-    int& alias = count; // a reference: another name for count
+    int &alias = count; // a reference: another name for count
     alias += 1;
 
-    int* pointer = &count; // a pointer: holds count's address (&count)
+    int *pointer = &count; // a pointer: holds count's address (&count)
     *pointer += 1;         // *pointer is the object it points to
 
     std::println("    count = {}, alias = {}, *pointer = {}", count, alias, *pointer);
@@ -65,8 +65,8 @@ void demo_lifetimes() {
     std::println("    after re-pointing: count = {}, other = {}", count, other);
 
     // const on the left of * protects the value; on the right, the pointer.
-    const int* read_only = &count; // *read_only = 1; won't compile
-    int* const fixed = &count;     // fixed = &other;  won't compile
+    const int *read_only = &count; // *read_only = 1; won't compile
+    int *const fixed = &count;     // fixed = &other;  won't compile
     *fixed = 6;
     std::println("    through read_only: {}", *read_only);
 
@@ -95,7 +95,7 @@ void consume(std::unique_ptr<Tracer> tracer) {
 
 // A function object: closer(file) calls this operator(), closing the file.
 struct FileCloser {
-    void operator()(std::FILE* file) const {
+    void operator()(std::FILE *file) const {
         std::println("    closing the file");
         std::fclose(file);
     }
@@ -117,7 +117,7 @@ static_assert(std::is_move_constructible_v<Owner>);
 
 void demo_ownership() {
     std::println("Raw new and delete:");
-    Tracer* raw = new Tracer{'r'};
+    Tracer *raw = new Tracer{'r'};
     std::println("    {} lives on the heap", raw->name());
     delete raw; // without this line, r is never destroyed: a leak
 
@@ -218,8 +218,8 @@ static_assert(alignof(Vec4) == 16 && sizeof(Vec4) == 16);
 // --- Reading raw memory ------------------------------------------------------
 
 // Any object may be read as a sequence of unsigned chars: its bytes.
-void print_bytes(const char* label, const void* object, std::size_t size) {
-    const auto* bytes = static_cast<const unsigned char*>(object);
+void print_bytes(const char *label, const void *object, std::size_t size) {
+    const auto *bytes = static_cast<const unsigned char*>(object);
 
     std::print("    {:<12}", label);
     for (std::size_t i = 0; i < size; ++i) {
@@ -231,7 +231,7 @@ void print_bytes(const char* label, const void* object, std::size_t size) {
 }
 
 // An address is a number, so alignment is divisibility.
-bool is_aligned(const void* address, std::size_t alignment) {
+bool is_aligned(const void *address, std::size_t alignment) {
     return reinterpret_cast<std::uintptr_t>(address) % alignment == 0;
 }
 
@@ -273,10 +273,10 @@ void demo_arena() {
     std::println("Arena:");
     Arena arena{64};
 
-    char* letter = arena.create<char>();
-    Vec4* vector = arena.create<Vec4>();
-    double* number = arena.create<double>();
-    Tight* tight = arena.create<Tight>();
+    char *letter = arena.create<char>();
+    Vec4 *vector = arena.create<Vec4>();
+    double *number = arena.create<double>();
+    Tight *tight = arena.create<Tight>();
 
     *letter = 'x';
     vector->w = 1.0f;
@@ -290,7 +290,7 @@ void demo_arena() {
     std::println("    used {} of {} bytes", arena.used(), arena.capacity());
 
     // The next Vec4 would start at 64, the end of the block.
-    const Vec4* overflow = arena.create<Vec4>();
+    const Vec4 *overflow = arena.create<Vec4>();
     std::println("    another Vec4 fits: {}", overflow != nullptr);
 
     // Moving hands over the block; the objects in it don't move at all.

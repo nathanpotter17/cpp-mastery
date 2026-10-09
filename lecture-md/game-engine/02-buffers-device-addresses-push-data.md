@@ -115,8 +115,8 @@ struct Buffer {
 // A buffer of `size` bytes in memory with `properties`. With eShaderDeviceAddress
 // in `usage`, `address` is filled in, so shaders can read it through a pointer.
 Buffer create_buffer(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
     vk::DeviceSize size,
     vk::BufferUsageFlags usage,
     vk::MemoryPropertyFlags properties
@@ -127,19 +127,19 @@ Buffer create_buffer(
 // Records commands with `record`, submits them to `queue`, and waits until
 // the GPU has finished. For one-off work like uploads, not for every frame.
 void submit_and_wait(
-    const vk::raii::Device& device,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const std::function<void(const vk::raii::CommandBuffer&)>& record
+    const vk::raii::Device &device,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const std::function<void(const vk::raii::CommandBuffer&)> &record
 );
 
 // A device-local buffer holding a copy of `bytes`, which the GPU reads at
 // full speed and shaders can reach through `address`.
 Buffer upload_buffer(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const std::byte> bytes,
     vk::BufferUsageFlags usage
 );
@@ -160,7 +160,7 @@ namespace {
 // The GPU offers a few memory types, each a set of properties (device-local,
 // host-visible, ...) in one of its heaps. `allowed` is the bitmask a buffer's
 // memory requirements permit; we take the first allowed type with `required`.
-std::uint32_t find_memory_type(const GpuChoice& gpu, std::uint32_t allowed, vk::MemoryPropertyFlags required) {
+std::uint32_t find_memory_type(const GpuChoice &gpu, std::uint32_t allowed, vk::MemoryPropertyFlags required) {
     const vk::PhysicalDeviceMemoryProperties memory = gpu.device.getMemoryProperties();
 
     for (std::uint32_t i = 0; i < memory.memoryTypeCount; ++i) {
@@ -179,8 +179,8 @@ std::uint32_t find_memory_type(const GpuChoice& gpu, std::uint32_t allowed, vk::
 // --- Creating buffers --------------------------------------------------------
 
 Buffer create_buffer(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
     vk::DeviceSize size,
     vk::BufferUsageFlags usage,
     vk::MemoryPropertyFlags properties
@@ -224,10 +224,10 @@ Buffer create_buffer(
 // --- Uploading ---------------------------------------------------------------
 
 void submit_and_wait(
-    const vk::raii::Device& device,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const std::function<void(const vk::raii::CommandBuffer&)>& record
+    const vk::raii::Device &device,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const std::function<void(const vk::raii::CommandBuffer&)> &record
 ) {
     vk::raii::CommandBuffers commands(device, vk::CommandBufferAllocateInfo{
         .commandPool = *pool,
@@ -252,10 +252,10 @@ void submit_and_wait(
 }
 
 Buffer upload_buffer(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const std::byte> bytes,
     vk::BufferUsageFlags usage
 ) {
@@ -266,7 +266,7 @@ Buffer upload_buffer(
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void* mapped = staging.memory.mapMemory(0, bytes.size());
+    void *mapped = staging.memory.mapMemory(0, bytes.size());
     std::memcpy(mapped, bytes.data(), bytes.size());
     staging.memory.unmapMemory();
 
@@ -275,7 +275,7 @@ Buffer upload_buffer(
         usage | vk::BufferUsageFlagBits::eTransferDst,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer& commands) {
+    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
         commands.copyBuffer(*staging.handle, *buffer.handle, vk::BufferCopy{.size = bytes.size()});
     });
 
@@ -312,7 +312,7 @@ struct Vertex {
 
 // Written with vkCmdPushDataEXT before each draw.
 struct PushData {
-    Vertex* vertices;  // device address of the first vertex
+    Vertex *vertices;  // device address of the first vertex
 };
 
 // In a descriptor heap pipeline, the push_constant block is where push data lands.
@@ -400,11 +400,11 @@ Four edits to `game-engine/src/main.cpp`.
 // Records: swapchain image -> clear to `color` -> draw the triangle at
 // `vertices` with `pipeline` -> ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
     std::array<float, 4> color,
-    const vk::raii::Pipeline& pipeline,
+    const vk::raii::Pipeline &pipeline,
     vk::DeviceAddress vertices
 ) {
     const vk::Image image = swapchain.images[image_index];

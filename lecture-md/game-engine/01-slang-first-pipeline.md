@@ -163,11 +163,11 @@ Normally a pipeline also needs a `VkPipelineLayout`, which declares the descript
 #include <vector>
 
 // A .spv file as the 32-bit words SPIR-V is made of.
-std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path);
+std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path);
 
 // Draws shaders/triangle.slang into a `color_format` image. There is no
 // pipeline layout: shaders will find their resources in the descriptor heap.
-vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device& device, vk::Format color_format);
+vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device &device, vk::Format color_format);
 ```
 
 `game-engine/src/pipeline.cpp`:
@@ -180,7 +180,7 @@ vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device& device, vk::
 
 // --- Loading SPIR-V ----------------------------------------------------------
 
-std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path) {
+std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path) {
     std::ifstream file(path, std::ios::binary);
 
     if (!file) {
@@ -206,7 +206,7 @@ std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path) {
 
 // --- The triangle pipeline ---------------------------------------------------
 
-vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device& device, vk::Format color_format) {
+vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device &device, vk::Format color_format) {
     // Shaders: one module, two entry points picked by name. The module is
     // only needed while the pipeline is built, so it's destroyed on return.
     const std::vector<std::uint32_t> spirv = read_spirv(std::filesystem::path(SHADER_DIR) / "triangle.spv");
@@ -332,11 +332,11 @@ Four edits to `game-engine/src/main.cpp`.
 ```cpp
 // Records: swapchain image -> clear to `color` -> draw with `pipeline` -> ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
     std::array<float, 4> color,
-    const vk::raii::Pipeline& pipeline
+    const vk::raii::Pipeline &pipeline
 ) {
     const vk::Image image = swapchain.images[image_index];
 

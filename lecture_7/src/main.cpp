@@ -27,7 +27,7 @@ struct Frame {
 
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -63,8 +63,8 @@ void transition(
 
 // Records: swapchain image -> clear to `color` -> ready to present.
 void record_clear(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
     std::array<float, 4> color
 ) {
@@ -110,7 +110,7 @@ void record_clear(
 }
 
 // `--frames N` closes the window after N frames (for scripted runs); 0 means never.
-std::uint64_t frame_limit(int argc, char** argv) {
+std::uint64_t frame_limit(int argc, char **argv) {
     std::uint64_t limit = 0;
 
     for (int i = 1; i + 1 < argc; ++i) {
@@ -140,7 +140,7 @@ bool poll_events() {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     try {
         SdlContext sdl;
         const int version = SDL_GetVersion();
@@ -196,7 +196,7 @@ int main(int argc, char** argv) {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             frames.push_back(Frame{
                 .commands = std::move(commands),
                 .image_acquired = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{}),
@@ -224,7 +224,7 @@ int main(int argc, char** argv) {
                 recreate_swapchain(swapchain, device, *gpu, surface, window.get());
             }
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer from last time.
             (void)device.waitForFences(*frame.done, vk::True, no_timeout);
@@ -284,7 +284,7 @@ int main(int argc, char** argv) {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

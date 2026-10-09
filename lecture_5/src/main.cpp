@@ -32,7 +32,7 @@ int main() {
     }
 
     for (auto [x, y] : {std::pair{0, 0}, {63, 0}, {0, 47}, {63, 47}}) {
-        const auto* pixel = loaded->at(x, y);
+        const auto *pixel = loaded->at(x, y);
         std::println("  pixel ({:2}, {:2}) = rgb({:3}, {:3}, {:3})", x, y, pixel[0], pixel[1], pixel[2]);
     }
 

@@ -552,13 +552,13 @@ struct EnvironmentInfo {
 struct FrameData {
     float4x4 view_projection;          // camera-relative space -> clip space
     float4x4 inverse_view_projection;  // clip space -> camera-relative space
-    Vertex* vertices;                  // the scene's vertices
-    uint* indices;                     // the scene's indices
-    DrawData* draws;                   // one DrawData per draw
-    uint* instances;                   // the cull's visible draws: what each instance draws
-    Material* materials;               // the scene's materials
-    Light* lights;                     // the scene's lights: directional ones first
-    EnvironmentInfo* environment;      // the sky's diffuse light and the sun
+    Vertex *vertices;                  // the scene's vertices
+    uint *indices;                     // the scene's indices
+    DrawData *draws;                   // one DrawData per draw
+    uint *instances;                   // the cull's visible draws: what each instance draws
+    Material *materials;               // the scene's materials
+    Light *lights;                     // the scene's lights: directional ones first
+    EnvironmentInfo *environment;      // the sky's diffuse light and the sun
     uint64_t scene_tlas;               // the top-level acceleration structure's address
     int3 camera_cell;                  // the world cell the camera is in
     float exposure;                    // scene nits -> tone mapper input
@@ -583,8 +583,8 @@ struct FrameData {
     float3 camera_forward;             // the way the camera looks: view depth is distance along it
     uint shadow_ray_budget;            // 0: every light traces its shadow ray; N: only the N strongest
     uint2 cluster_tiles;               // the light clusters' tiles across and down
-    uint* light_clusters;              // per cluster, one bit per visible light
-    uint* visible_lights;              // how many local lights are in view, then their indices
+    uint *light_clusters;              // per cluster, one bit per visible light
+    uint *visible_lights;              // how many local lights are in view, then their indices
 };
 
 // --- Light clusters (src/includes/light_clusters.h) --------------------------------
@@ -608,7 +608,7 @@ uint cluster_slice(float view_depth) {
 }
 
 // The first word of the bits of the cluster holding `pixel` at `view_depth`.
-uint* cluster_bits(FrameData* frame, float2 pixel, float view_depth) {
+uint *cluster_bits(FrameData *frame, float2 pixel, float view_depth) {
     const uint2 tile = min(uint2(pixel) / cluster_tile_size, frame.cluster_tiles - 1);
     const uint cluster = (cluster_slice(view_depth) * frame.cluster_tiles.y + tile.y) * frame.cluster_tiles.x + tile.x;
     return frame.light_clusters + cluster * cluster_words;
@@ -623,13 +623,13 @@ static const float cell_size = 64.0;
 // to the camera. The cells are subtracted as integers, exactly; only their
 // difference, and the offsets' difference, become floats. Near the camera,
 // both are small, and keep a float's full precision anywhere in the world.
-float3 camera_relative(FrameData* frame, int3 cell, float3 offset) {
+float3 camera_relative(FrameData *frame, int3 cell, float3 offset) {
     return float3(cell - frame.camera_cell) * cell_size + (offset - frame.camera_offset);
 }
 
 // Written with vkCmdPushDataEXT before each pipeline's draws.
 struct PushData {
-    FrameData* frame;  // this frame's data
+    FrameData *frame;  // this frame's data
 };
 
 // --- Normals in two numbers ------------------------------------------------------
@@ -685,7 +685,7 @@ static const uint scan_size = 256;
 groupshared uint scan_numbers[scan_size];
 groupshared uint scan_carry;
 
-void exclusive_scan(uint* input, uint* output, uint count, uint thread) {
+void exclusive_scan(uint *input, uint *output, uint count, uint thread) {
     if (thread == 0) {
         scan_carry = 0;
     }
@@ -769,23 +769,23 @@ struct DrawListRange {
 };
 
 struct CullTables {
-    uint* order;            // draw indices, in the cull's order
-    DrawGroup* groups;
-    DrawListRange* lists;
-    uint* visible;          // per position in the order
-    uint* draw_slots;       // prefix sums of visible, then their total
-    uint* group_flags;      // per group
-    uint* group_slots;      // prefix sums of group_flags, then their total
-    uint* instances;        // the visible draws' indices
-    DrawCommand* commands;  // per group
-    uint* counts;           // per list
+    uint *order;            // draw indices, in the cull's order
+    DrawGroup *groups;
+    DrawListRange *lists;
+    uint *visible;          // per position in the order
+    uint *draw_slots;       // prefix sums of visible, then their total
+    uint *group_flags;      // per group
+    uint *group_slots;      // prefix sums of group_flags, then their total
+    uint *instances;        // the visible draws' indices
+    DrawCommand *commands;  // per group
+    uint *counts;           // per list
     uint draw_count;
     uint group_count;
 };
 
 struct CullPushData {
-    FrameData* frame;
-    CullTables* tables;
+    FrameData *frame;
+    CullTables *tables;
 };
 
 [[vk::push_constant]]
@@ -844,7 +844,7 @@ bool in_view(float4x4 view_projection, float3 lo, float3 hi) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cullMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint position = id.x;
 
     if (position >= tables.draw_count) {
@@ -852,7 +852,7 @@ void cullMain(uint3 id : SV_DispatchThreadID) {
     }
 
     // The draw's box, from its cell to the camera: both corners in the same cell.
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const DrawData draw = frame.draws[tables.order[position]];
     const float3 lo = camera_relative(frame, draw.cell, draw.bounds_min);
     const float3 hi = camera_relative(frame, draw.cell, draw.bounds_max);
@@ -865,14 +865,14 @@ void cullMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(scan_size, 1, 1)]
 void scanDrawsMain(uint3 id : SV_GroupThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     exclusive_scan(tables.visible, tables.draw_slots, tables.draw_count, id.x);
 }
 
 [shader("compute")]
 [numthreads(scan_size, 1, 1)]
 void scanGroupsMain(uint3 id : SV_GroupThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     exclusive_scan(tables.group_flags, tables.group_slots, tables.group_count, id.x);
 }
 
@@ -880,14 +880,14 @@ void scanGroupsMain(uint3 id : SV_GroupThreadID) {
 
 // A group's draws are a run of the order, so its visible draws are a run of
 // the instances, from draw_slots[first] to draw_slots[first + count].
-uint visible_in_group(CullTables* tables, DrawGroup group) {
+uint visible_in_group(CullTables *tables, DrawGroup group) {
     return tables.draw_slots[group.first + group.count] - tables.draw_slots[group.first];
 }
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void markGroupsMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
 
     if (id.x >= tables.group_count) {
         return;
@@ -901,7 +901,7 @@ void markGroupsMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void writeInstancesMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint position = id.x;
 
     if (position >= tables.draw_count || tables.visible[position] == 0) {
@@ -919,7 +919,7 @@ void writeInstancesMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void writeCommandsMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint group_index = id.x;
 
     if (group_index >= tables.group_count) {
@@ -986,16 +986,16 @@ Four compute steps turn the lights and the view into each cluster's bits.
 // --- Data shared with C++ (src/includes/shader_types.h) ----------------------
 
 struct LightTables {
-    uint* flags;       // per local light: 1 if in view
-    uint* slots;       // prefix sums of flags, then their total
-    float4* spheres;   // per visible light: its centre in view space, and its range
+    uint *flags;       // per local light: 1 if in view
+    uint *slots;       // prefix sums of flags, then their total
+    float4 *spheres;   // per visible light: its centre in view space, and its range
     uint first_local;  // the first point or spot light: after the directional ones
     uint local_count;  // how many point and spot lights there are
 };
 
 struct LightPushData {
-    FrameData* frame;
-    LightTables* tables;
+    FrameData *frame;
+    LightTables *tables;
     uint2 extent;      // the screen, in pixels
 };
 
@@ -1016,12 +1016,12 @@ struct ViewAxes {
     float2 slope;  // per metre of depth, how far the screen's edge is, across and down
 };
 
-float3 near_point(FrameData* frame, float2 ndc) {
+float3 near_point(FrameData *frame, float2 ndc) {
     const float4 point = mul(frame.inverse_view_projection, float4(ndc, 1.0, 1.0));
     return point.xyz / point.w;
 }
 
-ViewAxes view_axes(FrameData* frame) {
+ViewAxes view_axes(FrameData *frame) {
     const float3 centre = near_point(frame, float2(0.0, 0.0));
     const float3 right = near_point(frame, float2(1.0, 0.0)) - centre;
     const float3 down = near_point(frame, float2(0.0, 1.0)) - centre;
@@ -1061,13 +1061,13 @@ bool sphere_in_view(float4x4 view_projection, float3 centre, float radius) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void markLightsMain(uint3 id : SV_DispatchThreadID) {
-    LightTables* tables = push.tables;
+    LightTables *tables = push.tables;
 
     if (id.x >= tables.local_count) {
         return;
     }
 
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Light light = frame.lights[tables.first_local + id.x];
     const float3 centre = camera_relative(frame, light.cell, light.offset);
 
@@ -1080,7 +1080,7 @@ void markLightsMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(scan_size, 1, 1)]
 void scanLightsMain(uint3 id : SV_GroupThreadID) {
-    LightTables* tables = push.tables;
+    LightTables *tables = push.tables;
     exclusive_scan(tables.flags, tables.slots, tables.local_count, id.x);
 }
 
@@ -1092,8 +1092,8 @@ void scanLightsMain(uint3 id : SV_GroupThreadID) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void listLightsMain(uint3 id : SV_DispatchThreadID) {
-    LightTables* tables = push.tables;
-    FrameData* frame = push.frame;
+    LightTables *tables = push.tables;
+    FrameData *frame = push.frame;
 
     if (id.x == 0) {
         frame.visible_lights[0] = min(tables.slots[tables.local_count], max_visible_lights);
@@ -1134,7 +1134,7 @@ void listLightsMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void clusterMain(uint3 id : SV_DispatchThreadID) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const uint word = id.x;
     const uint2 tile = uint2(id.y % frame.cluster_tiles.x, id.y / frame.cluster_tiles.x);
     const uint slice = id.z;
@@ -1241,22 +1241,22 @@ struct LightClusters {
 // For a scene whose lights never change, `light_count` of them, the first
 // `directional_count` directional; the rest point and spot lights.
 LightClusters create_light_clusters(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::uint32_t light_count,
     std::uint32_t directional_count,
     vk::Extent2D extent
 );
 
 // Makes the clusters for a screen of `extent` pixels. The GPU must be idle.
-void resize_light_clusters(LightClusters& clusters, const vk::raii::Device& device, const GpuChoice& gpu, vk::Extent2D extent);
+void resize_light_clusters(LightClusters &clusters, const vk::raii::Device &device, const GpuChoice &gpu, vk::Extent2D extent);
 
 // Records the four steps for the frame whose FrameData is at `frame`, which
 // must point at these clusters and visible lights. Afterwards, fragment
 // shaders may read them.
-void record_light_clusters(const vk::raii::CommandBuffer& commands, const LightClusters& clusters, vk::DeviceAddress frame);
+void record_light_clusters(const vk::raii::CommandBuffer &commands, const LightClusters &clusters, vk::DeviceAddress frame);
 ```
 
 `game-engine/src/light_clusters.cpp`:
@@ -1279,7 +1279,7 @@ std::uint32_t workgroups(std::uint32_t threads) {
 
 // A device-local buffer of `count` 32-bit numbers, written and read only by
 // the GPU, at least one long: a buffer can't be empty.
-Buffer gpu_numbers(const vk::raii::Device& device, const GpuChoice& gpu, std::size_t count) {
+Buffer gpu_numbers(const vk::raii::Device &device, const GpuChoice &gpu, std::size_t count) {
     return create_buffer(device, gpu, std::max<std::size_t>(count, 1) * sizeof(std::uint32_t),
         vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal);
 }
@@ -1287,7 +1287,7 @@ Buffer gpu_numbers(const vk::raii::Device& device, const GpuChoice& gpu, std::si
 // Makes the `dst` work wait for the `src` work, and the `src` writes visible
 // to the `dst` accesses.
 void memory_barrier(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::PipelineStageFlags2 src_stage,
     vk::AccessFlags2 src_access,
     vk::PipelineStageFlags2 dst_stage,
@@ -1303,7 +1303,7 @@ void memory_barrier(
     commands.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
 }
 
-void compute_to_compute(const vk::raii::CommandBuffer& commands) {
+void compute_to_compute(const vk::raii::CommandBuffer &commands) {
     memory_barrier(commands,
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageRead);
@@ -1314,10 +1314,10 @@ void compute_to_compute(const vk::raii::CommandBuffer& commands) {
 // --- Creating ----------------------------------------------------------------
 
 LightClusters create_light_clusters(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::uint32_t light_count,
     std::uint32_t directional_count,
     vk::Extent2D extent
@@ -1352,7 +1352,7 @@ LightClusters create_light_clusters(
     return clusters;
 }
 
-void resize_light_clusters(LightClusters& clusters, const vk::raii::Device& device, const GpuChoice& gpu, vk::Extent2D extent) {
+void resize_light_clusters(LightClusters &clusters, const vk::raii::Device &device, const GpuChoice &gpu, vk::Extent2D extent) {
     clusters.extent = extent;
     clusters.tiles = glm::uvec2{
         (extent.width + cluster_tile_size - 1) / cluster_tile_size,
@@ -1367,7 +1367,7 @@ void resize_light_clusters(LightClusters& clusters, const vk::raii::Device& devi
 
 // --- Recording ---------------------------------------------------------------
 
-void record_light_clusters(const vk::raii::CommandBuffer& commands, const LightClusters& clusters, vk::DeviceAddress frame) {
+void record_light_clusters(const vk::raii::CommandBuffer &commands, const LightClusters &clusters, vk::DeviceAddress frame) {
     // The previous frame's fragment shaders read the clusters and the visible
     // lights: wait for them before rewriting either.
     memory_barrier(commands,
@@ -1380,7 +1380,7 @@ void record_light_clusters(const vk::raii::CommandBuffer& commands, const LightC
         .extent = glm::uvec2{clusters.extent.width, clusters.extent.height},
     };
 
-    const auto step = [&](const vk::raii::Pipeline& pipeline, std::uint32_t x, std::uint32_t y, std::uint32_t z) {
+    const auto step = [&](const vk::raii::Pipeline &pipeline, std::uint32_t x, std::uint32_t y, std::uint32_t z) {
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
         commands.pushDataEXT(vk::PushDataInfoEXT{
             .offset = 0,
@@ -1543,7 +1543,7 @@ struct Scene {
 // samplers, lights and images, still encoded.
 // The scene is placed with its origin at `origin`, in metres from the
 // world's.
-Scene load_gltf(const std::filesystem::path& path, const glm::dvec3& origin = glm::dvec3{0.0});
+Scene load_gltf(const std::filesystem::path &path, const glm::dvec3 &origin = glm::dvec3{0.0});
 
 // Point and spot lights without a range in the file are given one: where
 // their illuminance falls below light_threshold lux, at most max_light_range
@@ -1556,12 +1556,12 @@ constexpr float max_light_range = 4096.0f;
 // centred under `centre` at height `height`, made of `tile`-metre tiles. The
 // tiles are one primitive drawn once per tile, each placed in its own cell,
 // so the ground holds a float's precision wherever the camera is on it.
-void add_ground(Scene& scene, const glm::dvec3& centre, double height, double size, double tile);
+void add_ground(Scene &scene, const glm::dvec3 &centre, double height, double size, double tile);
 
 // Adds `count` coloured point and spot lights to `scene`, spread through its
 // box, the same ones every run: something to test many lights with. Every
 // fourth is a spot shining down; every 64th has no range of its own.
-void add_test_lights(Scene& scene, std::uint32_t count);
+void add_test_lights(Scene &scene, std::uint32_t count);
 ```
 
 In `game-engine/src/scene.cpp`, replace `world_light` with:
@@ -1582,7 +1582,7 @@ float light_range(glm::vec3 intensity, double file_range) {
 
 // A KHR_lights_punctual light, placed by its node's world transform. The
 // light sits at the node's origin and shines down the node's -Z axis.
-std::optional<Light> world_light(const tinygltf::Light& source, const glm::dmat4& world) {
+std::optional<Light> world_light(const tinygltf::Light &source, const glm::dmat4 &world) {
     const glm::vec3 color = source.color.size() == 3 ? glm::vec3(glm::make_vec3(source.color.data())) : glm::vec3(1.0f);
     const CellPosition position = to_cell(glm::dvec3(world[3]));
 
@@ -1623,7 +1623,7 @@ std::optional<Light> world_light(const tinygltf::Light& source, const glm::dmat4
 
 At the end of `game-engine/src/scene.cpp`, add:
 ```cpp
-void add_test_lights(Scene& scene, std::uint32_t count) {
+void add_test_lights(Scene &scene, std::uint32_t count) {
     // A hash of the light's number and which value is wanted, as 0..1: the
     // same lights every run, without a random number generator's state.
     const auto random = [](std::uint32_t light, std::uint32_t value) {
@@ -1761,7 +1761,7 @@ struct VertexOutput {
 // in `instances`, so each instance finds its draw there.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Vertex vertex = frame.vertices[vertex_id];
     const uint draw_index = frame.instances[instance];
     const DrawData draw = frame.draws[draw_index];
@@ -1993,7 +1993,7 @@ float3 offset_ray_origin(float3 position, float3 normal) {
 // materials, so the texture's heap index differs between them: that's fine,
 // since descriptor heap access is non-uniform unless the SPIR-V marks it
 // uniform, and Slang doesn't.
-float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
+float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
     const uint first = draw.first_index + triangle * 3;
     const Vertex v0 = frame.vertices[int(frame.indices[first]) + draw.vertex_offset];
     const Vertex v1 = frame.vertices[int(frame.indices[first + 1]) + draw.vertex_offset];
@@ -2019,7 +2019,7 @@ float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint t
 //   - a blended one comes back as a candidate that lets 1 - alpha of the
 //     light through, as the transparency pass's reveal sum does. It never
 //     ends the ray: the light goes on, dimmed, to whatever is behind.
-float light_visibility(FrameData* frame, float3 origin, float3 direction, float distance) {
+float light_visibility(FrameData *frame, float3 origin, float3 direction, float distance) {
     const RaytracingAccelerationStructure scene = RaytracingAccelerationStructure(frame.scene_tlas);
 
     RayDesc ray;
@@ -2061,14 +2061,14 @@ float light_visibility(FrameData* frame, float3 origin, float3 direction, float 
 // from the camera itself (acceleration.h): tlas_offset, the camera's
 // position in it, moves the camera-relative position there first, so the
 // offset grows with the coordinates the ray is really traced at.
-float3 shadow_ray_origin(FrameData* frame, float3 position, float3 face_normal, float3 l) {
+float3 shadow_ray_origin(FrameData *frame, float3 position, float3 face_normal, float3 l) {
     return offset_ray_origin(position + frame.tlas_offset, dot(face_normal, l) >= 0.0 ? face_normal : -face_normal);
 }
 
 // shade(), times how much of the light gets through. A ray is only traced
 // when the light could reach the surface at all.
 float3 shade_shadowed(
-    Surface surface, FrameData* frame, float3 position, float3 face_normal,
+    Surface surface, FrameData *frame, float3 position, float3 face_normal,
     float3 l, float3 illuminance, float distance
 ) {
     if (dot(surface.normal, l) <= 0.0 || all(illuminance == 0.0)) {
@@ -2088,7 +2088,7 @@ float3 shade_shadowed(
 // slope. (Karis also divides by d^2 + 1 rather than d^2, to keep a light
 // finite at its centre; KHR_lights_punctual's inverse square has no + 1.) Spot lights also fade from the inner cone to the outer one. A
 // directional light is infinitely far away.
-float3 punctual_light(FrameData* frame, Light light, float3 position, out float3 l, out float distance) {
+float3 punctual_light(FrameData *frame, Light light, float3 position, out float3 l, out float distance) {
     if (light.type == light_directional) {
         l = -light.direction;
         distance = infinite_distance;
@@ -2113,7 +2113,7 @@ float3 punctual_light(FrameData* frame, Light light, float3 position, out float3
 }
 
 // One light's shadowed contribution at `position`.
-float3 shade_light(Surface surface, FrameData* frame, Light light, float3 position, float3 face_normal) {
+float3 shade_light(Surface surface, FrameData *frame, Light light, float3 position, float3 face_normal) {
     float3 l;
     float distance;
     const float3 illuminance = punctual_light(frame, light, position, l, distance);
@@ -2141,7 +2141,7 @@ float arriving(Surface surface, Light light, float3 illuminance, float3 l) {
 // The next light in a cluster's bits: each word holds 32 of the visible
 // lights' bits, and firstbitlow finds the lowest one still set. Returns the
 // light's index among all the lights, and clears its bit in `remaining`.
-uint next_light(FrameData* frame, uint word, inout uint remaining) {
+uint next_light(FrameData *frame, uint word, inout uint remaining) {
     const uint bit = firstbitlow(remaining);
     remaining &= remaining - 1;  // clears that bit
     return frame.visible_lights[1 + word * 32 + bit];
@@ -2152,9 +2152,9 @@ uint next_light(FrameData* frame, uint word, inout uint remaining) {
 // no light at all traces none. With a budget of N rays, only the N lights
 // that bring it the most light, without shadows, trace theirs; the rest
 // light the pixel unshadowed.
-float3 shade_local_lights(Surface surface, FrameData* frame, VertexOutput input, float3 face_normal) {
+float3 shade_local_lights(Surface surface, FrameData *frame, VertexOutput input, float3 face_normal) {
     const float3 position = input.relative_position;
-    uint* bits = cluster_bits(frame, input.position.xy, dot(position, frame.camera_forward));
+    uint *bits = cluster_bits(frame, input.position.xy, dot(position, frame.camera_forward));
     const uint visible_count = frame.visible_lights[0];
     const uint budget = min(frame.shadow_ray_budget, max_shadow_ray_budget);
 
@@ -2247,7 +2247,7 @@ float3 shade_local_lights(Surface surface, FrameData* frame, VertexOutput input,
 
 // The sky's irradiance on a surface facing `n`, in lux: its nine spherical
 // harmonics coefficients, each weighted by its basis function at `n`.
-float3 sky_irradiance(EnvironmentInfo* environment, float3 n) {
+float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     const float basis[9] = {
         0.282095,
         0.488603 * n.y,
@@ -2314,7 +2314,7 @@ float specular_occlusion(float n_dot_v, float visibility, float alpha) {
 //     the BRDF reflects overall (the table, as a scale and bias on F0),
 //     dimmed by the specular occlusion.
 //   - A roughness-aware Fresnel term splits the light between the two.
-float3 shade_environment(Surface surface, FrameData* frame, float roughness, float visibility, float3 irradiance_normal) {
+float3 shade_environment(Surface surface, FrameData *frame, float roughness, float visibility, float3 irradiance_normal) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
     const float3 f0 = lerp(float3(0.04), surface.base_color, surface.metallic);
     const float3 fresnel = f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(1.0 - n_dot_v, 5.0);
@@ -2349,7 +2349,7 @@ float3 shade_environment(Surface surface, FrameData* frame, float roughness, flo
 // back, in proportion to how much the surface reflects at all. Kulla and
 // Conty's (2017) idea, in Turquin's (2019) simpler scaled form, which
 // Filament uses.
-float3 energy_compensation(FrameData* frame, float3 base_color, float metallic, float roughness, float n_dot_v) {
+float3 energy_compensation(FrameData *frame, float3 base_color, float metallic, float roughness, float n_dot_v) {
     const SamplerState clamped = SamplerState.Handle(uint2(frame.clamp_sampler, 0));
     const Texture2D brdf_lut = Texture2D.Handle(uint2(frame.brdf_lut, 0));
     const float2 brdf = brdf_lut.SampleLevel(clamped, float2(n_dot_v, roughness), 0.0).rg;
@@ -2408,7 +2408,7 @@ float antialiased_alpha(float alpha, float3 geometric_normal, float map_spread) 
 // through: the aerial perspective volumes, at the point's place on the
 // screen and its distance. Closer than the first slice's far edge, a share
 // of the first slice's air.
-float3 aerial_perspective(FrameData* frame, float3 position, out float3 transmittance) {
+float3 aerial_perspective(FrameData *frame, float3 position, out float3 transmittance) {
     const float4 clip = mul(frame.view_projection, float4(position, 1.0));
     const float2 screen = clip.xy / clip.w * 0.5 + 0.5;
 
@@ -2447,7 +2447,7 @@ float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
 // surfaces the lighting pass will shade.
 [shader("fragment")]
 float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
     if (alpha_mode == alpha_mask) {
@@ -2465,8 +2465,8 @@ float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Ta
 // How many lights this pixel's cluster holds, as a heat map: black for none,
 // dark blue for 1 or 2, then blue, green, yellow and red at 4, 8, 16 and 32
 // or more.
-float3 light_count_heat(FrameData* frame, VertexOutput input) {
-    uint* bits = cluster_bits(frame, input.position.xy, dot(input.relative_position, frame.camera_forward));
+float3 light_count_heat(FrameData *frame, VertexOutput input) {
+    uint *bits = cluster_bits(frame, input.position.xy, dot(input.relative_position, frame.camera_forward));
     const uint visible_count = frame.visible_lights[0];
     uint count = 0;
 
@@ -2492,7 +2492,7 @@ float3 light_count_heat(FrameData* frame, VertexOutput input) {
 // transparency pass adds it into its sums.
 // `front_face`: whether this triangle faces the camera.
 float4 shade_fragment(VertexOutput input, bool front_face) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
     // Base color: factor x texture x vertex color. sRGB textures are decoded
@@ -2755,9 +2755,9 @@ struct Frame {
     vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
     vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     Buffer data;                                   // one FrameData, host-visible
-    FrameData* mapped = nullptr;                   // `data`, mapped for the CPU to write
+    FrameData *mapped = nullptr;                   // `data`, mapped for the CPU to write
     Buffer cull_totals;                            // the cull's totals, copied out, host-visible
-    const CullTotals* totals = nullptr;            // `cull_totals`, mapped for the CPU to read
+    const CullTotals *totals = nullptr;            // `cull_totals`, mapped for the CPU to read
 };
 
 // --- Recording a frame -------------------------------------------------------
@@ -2765,7 +2765,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -2856,11 +2856,11 @@ struct DrawList {
 // says where the frame's data is; each instance finds its DrawData through
 // the cull's instances.
 void draw_mode(
-    const vk::raii::CommandBuffer& commands,
-    const DrawCulling& culling,
-    const DrawList& draws,
+    const vk::raii::CommandBuffer &commands,
+    const DrawCulling &culling,
+    const DrawList &draws,
     AlphaMode mode,
-    const vk::raii::Pipeline& pipeline
+    const vk::raii::Pipeline &pipeline
 ) {
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
@@ -2890,7 +2890,7 @@ void draw_mode(
 
 // The viewport and scissor every pass uses: the whole image. The pipelines
 // leave both dynamic.
-void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) {
+void set_viewport(const vk::raii::CommandBuffer &commands, vk::Extent2D extent) {
     commands.setViewport(0, vk::Viewport{
         .x = 0.0f,
         .y = 0.0f,
@@ -2914,16 +2914,16 @@ void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) 
 //   5. tone mapping, from the HDR image into the swapchain image, which is
 //      then ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
-    const ScenePipelines& pipelines,
-    const AmbientOcclusion& ambient_occlusion,
-    const DrawCulling& culling,
-    const LightClusters& light_clusters,
-    const Environment& environment,
-    const DescriptorHeaps& heaps,
-    const DrawList& draws
+    const ScenePipelines &pipelines,
+    const AmbientOcclusion &ambient_occlusion,
+    const DrawCulling &culling,
+    const LightClusters &light_clusters,
+    const Environment &environment,
+    const DescriptorHeaps &heaps,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
     const vk::Image hdr = *swapchain.hdr.handle;
@@ -3269,7 +3269,7 @@ constexpr std::array view_names{
 //   - =   exposure, half a stop darker or brighter: like a camera's
 //         exposure compensation, + is brighter
 // Holding a key repeats it.
-bool poll_events(SDL_Window* window, CameraInput& input, Settings& settings) {
+bool poll_events(SDL_Window *window, CameraInput &input, Settings &settings) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -3421,18 +3421,18 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             // Host-coherent: the CPU's writes reach the GPU without a flush.
             Buffer data = create_buffer(device, *gpu, sizeof(FrameData),
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
+            auto *mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
 
             // Starts zeroed: the first wait on each frame reads it before
             // the GPU has written it.
             Buffer cull_totals = create_buffer(device, *gpu, sizeof(CullTotals), vk::BufferUsageFlagBits::eTransferDst,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* totals = static_cast<CullTotals*>(cull_totals.memory.mapMemory(0, sizeof(CullTotals)));
+            auto *totals = static_cast<CullTotals*>(cull_totals.memory.mapMemory(0, sizeof(CullTotals)));
             *totals = CullTotals{.visible_draws = 0, .commands = 0};
 
             frames.push_back(Frame{
@@ -3484,7 +3484,7 @@ int main() {
         // clustered, and the shader takes the first directional_count. The
         // rest keep their order.
         const auto directional_end = std::ranges::stable_partition(scene.lights,
-            [](const Light& light) { return light.type == LightType::directional; });
+            [](const Light &light) { return light.type == LightType::directional; });
         const auto directional_count = static_cast<std::uint32_t>(directional_end.begin() - scene.lights.begin());
 
         // Each draw's matrices, triangles and box, and what the cull needs to
@@ -3495,9 +3495,9 @@ int main() {
         std::vector<CullDraw> cull_draws;
         std::array<std::size_t, 3> mode_draws{};  // how many draws of each alpha mode
 
-        for (const MeshDraw& draw : scene.draws) {
-            const Primitive& primitive = scene.primitives[draw.primitive];
-            const SceneMaterial& material = scene.materials[primitive.material];
+        for (const MeshDraw &draw : scene.draws) {
+            const Primitive &primitive = scene.primitives[draw.primitive];
+            const SceneMaterial &material = scene.materials[primitive.material];
             const std::uint32_t list = draw_list_index(material.alpha_mode, material.double_sided, draw.mirrored);
 
             draw_data.push_back(DrawData{
@@ -3587,7 +3587,7 @@ int main() {
         // The swapchain's images are recreated with it, so their descriptors
         // are rewritten every time: after this, only while the GPU is idle.
         const auto describe_screen = [&] {
-            const auto whole = [](const Image& image, vk::ImageAspectFlags aspect) {
+            const auto whole = [](const Image &image, vk::ImageAspectFlags aspect) {
                 return vk::ImageViewCreateInfo{
                     .image = *image.handle,
                     .viewType = vk::ImageViewType::e2D,
@@ -3640,7 +3640,7 @@ int main() {
         // Heap indices are one past the scene's: image i is texture i + 1 and
         // sampler i is sampler i + 1, so "none" (-1) becomes 0, the white
         // texture or the default sampler.
-        const auto slot = [](const TextureRef& ref) {
+        const auto slot = [](const TextureRef &ref) {
             return TextureSlot{
                 .texture = static_cast<std::uint32_t>(ref.image + 1),
                 .sampler = static_cast<std::uint32_t>(ref.sampler + 1),
@@ -3650,7 +3650,7 @@ int main() {
 
         std::vector<Material> materials;
 
-        for (const SceneMaterial& material : scene.materials) {
+        for (const SceneMaterial &material : scene.materials) {
             materials.push_back(Material{
                 .base_color_factor = material.base_color_factor,
                 .emissive_factor = material.emissive_factor,
@@ -3745,7 +3745,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer and
             //    data from last time, then write this frame's data.
@@ -3898,7 +3898,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

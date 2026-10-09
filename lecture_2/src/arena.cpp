@@ -21,12 +21,12 @@ Arena::~Arena() {
 
 // std::exchange(x, v) sets x to v and returns x's old value: we take other's
 // block and leave other empty, so only one arena ever owns it.
-Arena::Arena(Arena&& other) noexcept
+Arena::Arena(Arena &&other) noexcept
     : memory_{std::exchange(other.memory_, nullptr)},
       capacity_{std::exchange(other.capacity_, 0)},
       used_{std::exchange(other.used_, 0)} {}
 
-Arena& Arena::operator=(Arena&& other) noexcept {
+Arena &Arena::operator=(Arena &&other) noexcept {
     // Moving an arena into itself must not free its own block.
     if (this != &other) {
         delete[] memory_;
@@ -39,7 +39,7 @@ Arena& Arena::operator=(Arena&& other) noexcept {
 
 // --- Allocating --------------------------------------------------------------
 
-void* Arena::allocate(std::size_t size, std::size_t alignment) {
+void *Arena::allocate(std::size_t size, std::size_t alignment) {
     // A bad alignment is a bug in the caller, so we assert. A power of two
     // has one bit set, and x & (x - 1) clears the lowest set bit.
     assert(alignment != 0 && (alignment & (alignment - 1)) == 0 && "alignment must be a power of two");
@@ -56,12 +56,12 @@ void* Arena::allocate(std::size_t size, std::size_t alignment) {
         return nullptr;
     }
 
-    std::byte* result = memory_ + used_ + padding;
+    std::byte *result = memory_ + used_ + padding;
     used_ += padding + size;
     return result;
 }
 
-std::size_t Arena::offset_of(const void* pointer) const {
+std::size_t Arena::offset_of(const void *pointer) const {
     // Subtracting two pointers into the same block counts the bytes between them.
     return static_cast<std::size_t>(static_cast<const std::byte*>(pointer) - memory_);
 }

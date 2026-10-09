@@ -225,7 +225,7 @@ struct Scene {
 
 // Loads the default scene of a .gltf or .glb file, with its materials and
 // its images, still encoded.
-Scene load_gltf(const std::filesystem::path& path);
+Scene load_gltf(const std::filesystem::path &path);
 ```
 
 `game-engine/src/scene.cpp`:
@@ -258,11 +258,11 @@ namespace {
 // Copies `count` elements of `element_size` bytes, `stride` apart, starting at
 // `offset` in bufferView `view_index`, after checking they fit in the buffer.
 std::vector<unsigned char> copy_elements(
-    const tinygltf::Model& model, int view_index, std::size_t offset,
+    const tinygltf::Model &model, int view_index, std::size_t offset,
     std::size_t count, std::size_t element_size, std::size_t stride
 ) {
-    const tinygltf::BufferView& view = model.bufferViews.at(view_index);
-    const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
+    const tinygltf::BufferView &view = model.bufferViews.at(view_index);
+    const tinygltf::Buffer &buffer = model.buffers.at(view.buffer);
 
     const std::size_t start = view.byteOffset + offset;
     const std::size_t end = count == 0 ? start : start + (count - 1) * stride + element_size;
@@ -284,8 +284,8 @@ std::vector<unsigned char> copy_elements(
 //   - byteStride 0 means elements are packed already; otherwise they're spread out,
 //   - without a bufferView every element starts as zeros,
 //   - a sparse accessor then replaces the elements its index list names.
-std::vector<unsigned char> accessor_elements(const tinygltf::Model& model, int accessor_index) {
-    const tinygltf::Accessor& accessor = model.accessors.at(accessor_index);
+std::vector<unsigned char> accessor_elements(const tinygltf::Model &model, int accessor_index) {
+    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
 
     const int component_size = tinygltf::GetComponentSizeInBytes(static_cast<std::uint32_t>(accessor.componentType));
     const int components = tinygltf::GetNumComponentsInType(static_cast<std::uint32_t>(accessor.type));
@@ -309,7 +309,7 @@ std::vector<unsigned char> accessor_elements(const tinygltf::Model& model, int a
     }
 
     if (accessor.sparse.isSparse) {
-        const auto& sparse = accessor.sparse;
+        const auto &sparse = accessor.sparse;
         const int index_size = tinygltf::GetComponentSizeInBytes(static_cast<std::uint32_t>(sparse.indices.componentType));
         const auto count = static_cast<std::size_t>(sparse.count);
 
@@ -342,8 +342,8 @@ std::vector<unsigned char> accessor_elements(const tinygltf::Model& model, int a
 // Reads an accessor as floats, `components` per element. Besides 32-bit
 // floats, glTF allows integers here (KHR_mesh_quantization), and "normalized"
 // integers mean a fraction of their range: 255 as an unsigned byte is 1.0.
-std::vector<float> read_floats(const tinygltf::Model& model, int accessor_index, int components) {
-    const tinygltf::Accessor& accessor = model.accessors.at(accessor_index);
+std::vector<float> read_floats(const tinygltf::Model &model, int accessor_index, int components) {
+    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
 
     if (tinygltf::GetNumComponentsInType(static_cast<std::uint32_t>(accessor.type)) != components) {
         throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has the wrong number of components");
@@ -375,14 +375,14 @@ std::vector<float> read_floats(const tinygltf::Model& model, int accessor_index,
     return values;
 }
 
-std::vector<glm::vec3> read_vec3(const tinygltf::Model& model, int accessor_index) {
+std::vector<glm::vec3> read_vec3(const tinygltf::Model &model, int accessor_index) {
     const std::vector<float> floats = read_floats(model, accessor_index, 3);
     std::vector<glm::vec3> values(floats.size() / 3);
     std::memcpy(values.data(), floats.data(), floats.size() * sizeof(float));
     return values;
 }
 
-std::vector<glm::vec2> read_vec2(const tinygltf::Model& model, int accessor_index) {
+std::vector<glm::vec2> read_vec2(const tinygltf::Model &model, int accessor_index) {
     const std::vector<float> floats = read_floats(model, accessor_index, 2);
     std::vector<glm::vec2> values(floats.size() / 2);
     std::memcpy(values.data(), floats.data(), floats.size() * sizeof(float));
@@ -391,8 +391,8 @@ std::vector<glm::vec2> read_vec2(const tinygltf::Model& model, int accessor_inde
 
 // Indices may be 8, 16 or 32 bits, even within one file; they're widened to
 // 32 bits so the whole scene can share one index buffer.
-std::vector<std::uint32_t> read_indices(const tinygltf::Model& model, int accessor_index) {
-    const tinygltf::Accessor& accessor = model.accessors.at(accessor_index);
+std::vector<std::uint32_t> read_indices(const tinygltf::Model &model, int accessor_index) {
+    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
     const std::vector<unsigned char> bytes = accessor_elements(model, accessor_index);
     std::vector<std::uint32_t> indices(accessor.count);
 
@@ -426,7 +426,7 @@ struct LoadedPrimitive {
 
 // Turns triangle strips and fans into a plain list of triangles, keeping
 // every triangle's corners in the same winding order.
-std::vector<std::uint32_t> to_triangle_list(int mode, const std::vector<std::uint32_t>& indices) {
+std::vector<std::uint32_t> to_triangle_list(int mode, const std::vector<std::uint32_t> &indices) {
     std::vector<std::uint32_t> list;
 
     for (std::size_t i = 2; i < indices.size(); ++i) {
@@ -447,7 +447,7 @@ std::vector<std::uint32_t> to_triangle_list(int mode, const std::vector<std::uin
 // positions are skipped, as glTF allows: this renderer draws triangles.
 // `default_material` is used when the primitive doesn't name one.
 std::optional<LoadedPrimitive> add_primitive(
-    const tinygltf::Model& model, const tinygltf::Primitive& source, std::uint32_t default_material, Scene& scene
+    const tinygltf::Model &model, const tinygltf::Primitive &source, std::uint32_t default_material, Scene &scene
 ) {
     const auto position = source.attributes.find("POSITION");
     const bool triangles = source.mode == TINYGLTF_MODE_TRIANGLES
@@ -538,7 +538,7 @@ std::optional<LoadedPrimitive> add_primitive(
 
 // A node's transform relative to its parent: either a full matrix, or
 // translation * rotation * scale. glTF stores doubles; we draw with floats.
-glm::mat4 local_transform(const tinygltf::Node& node) {
+glm::mat4 local_transform(const tinygltf::Node &node) {
     if (node.matrix.size() == 16) {
         return glm::mat4(glm::make_mat4(node.matrix.data()));  // column-major, like glm
     }
@@ -551,7 +551,7 @@ glm::mat4 local_transform(const tinygltf::Node& node) {
 
     if (node.rotation.size() == 4) {
         // glTF stores (x, y, z, w); glm's constructor takes w first.
-        const auto& r = node.rotation;
+        const auto &r = node.rotation;
         const glm::quat rotation(static_cast<float>(r[3]), static_cast<float>(r[0]),
             static_cast<float>(r[1]), static_cast<float>(r[2]));
         transform *= glm::mat4_cast(rotation);
@@ -567,17 +567,17 @@ glm::mat4 local_transform(const tinygltf::Node& node) {
 // Walks the node tree. Each node's world transform is its parent's times its
 // own, and every primitive of a node's mesh becomes one draw.
 void visit_node(
-    const tinygltf::Model& model,
+    const tinygltf::Model &model,
     int node_index,
-    const glm::mat4& parent,
-    const std::vector<std::vector<LoadedPrimitive>>& mesh_primitives,
-    Scene& scene
+    const glm::mat4 &parent,
+    const std::vector<std::vector<LoadedPrimitive>> &mesh_primitives,
+    Scene &scene
 ) {
-    const tinygltf::Node& node = model.nodes.at(node_index);
+    const tinygltf::Node &node = model.nodes.at(node_index);
     const glm::mat4 world = parent * local_transform(node);
 
     if (node.mesh >= 0) {
-        for (const LoadedPrimitive& primitive : mesh_primitives.at(node.mesh)) {
+        for (const LoadedPrimitive &primitive : mesh_primitives.at(node.mesh)) {
             scene.draws.push_back(MeshDraw{.model = world, .primitive = primitive.index});
 
             // Grow the scene bounds by the 8 corners of the primitive's box,
@@ -606,7 +606,7 @@ void visit_node(
 // The image a texture reference points at: material -> texture -> image.
 // -1 if there's no texture, or the texture's image is in a form we don't
 // read (KHR_texture_basisu puts it in an extension instead of `source`).
-std::int32_t texture_image(const tinygltf::Model& model, int texture_index) {
+std::int32_t texture_image(const tinygltf::Model &model, int texture_index) {
     if (texture_index < 0) {
         return -1;
     }
@@ -620,9 +620,9 @@ std::int32_t texture_image(const tinygltf::Model& model, int texture_index) {
     return image;
 }
 
-void add_materials_and_images(tinygltf::Model& model, Scene& scene) {
-    for (const tinygltf::Material& source : model.materials) {
-        const auto& pbr = source.pbrMetallicRoughness;
+void add_materials_and_images(tinygltf::Model &model, Scene &scene) {
+    for (const tinygltf::Material &source : model.materials) {
+        const auto &pbr = source.pbrMetallicRoughness;
 
         scene.materials.push_back(SceneMaterial{
             .base_color_factor = glm::vec4(glm::make_vec4(pbr.baseColorFactor.data())),
@@ -634,7 +634,7 @@ void add_materials_and_images(tinygltf::Model& model, Scene& scene) {
     scene.materials.push_back(SceneMaterial{});
 
     // The image bytes move out of tinygltf's model; it's discarded afterwards.
-    for (tinygltf::Image& image : model.images) {
+    for (tinygltf::Image &image : model.images) {
         scene.images.push_back(SceneImage{
             .encoded = std::move(image.image),
             .name = image.uri.empty() ? image.name : image.uri,
@@ -643,7 +643,7 @@ void add_materials_and_images(tinygltf::Model& model, Scene& scene) {
 
     // Colors are stored sRGB-encoded; everything else (normals, roughness, ...)
     // is plain data. Base color and emissive textures hold colors.
-    for (const tinygltf::Material& source : model.materials) {
+    for (const tinygltf::Material &source : model.materials) {
         for (const int texture : {source.pbrMetallicRoughness.baseColorTexture.index, source.emissiveTexture.index}) {
             if (const std::int32_t image = texture_image(model, texture); image >= 0) {
                 scene.images.at(static_cast<std::size_t>(image)).srgb = true;
@@ -658,8 +658,8 @@ void add_materials_and_images(tinygltf::Model& model, Scene& scene) {
 // or inside a .glb, and hands them to this callback. We keep the encoded bytes
 // (PNG, JPEG, ...) as they are; Chapter 5 decodes them.
 bool keep_encoded_image(
-    tinygltf::Image* image, int /*image_index*/, std::string* /*error*/, std::string* /*warning*/,
-    int /*required_width*/, int /*required_height*/, const unsigned char* bytes, int size, void* /*user_data*/
+    tinygltf::Image *image, int /*image_index*/, std::string* /*error*/, std::string* /*warning*/,
+    int /*required_width*/, int /*required_height*/, const unsigned char *bytes, int size, void* /*user_data*/
 ) {
     image->image.assign(bytes, bytes + size);
     image->as_is = true;
@@ -670,7 +670,7 @@ bool keep_encoded_image(
 
 // --- Loading -----------------------------------------------------------------
 
-Scene load_gltf(const std::filesystem::path& path) {
+Scene load_gltf(const std::filesystem::path &path) {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
     std::string error;
@@ -697,7 +697,7 @@ Scene load_gltf(const std::filesystem::path& path) {
     // geometry needs a decoder library we don't include, so refuse it clearly
     // instead of reading compressed bytes as vertices. The others change how
     // things look, not where the geometry is, and later chapters handle them.
-    for (const std::string& extension : model.extensionsRequired) {
+    for (const std::string &extension : model.extensionsRequired) {
         if (extension == "KHR_draco_mesh_compression" || extension == "KHR_meshopt_compression"
             || extension == "EXT_meshopt_compression") {
             throw std::runtime_error(path.string() + " needs " + extension + ", which this loader doesn't decode");
@@ -713,7 +713,7 @@ Scene load_gltf(const std::filesystem::path& path) {
     std::vector<std::vector<LoadedPrimitive>> mesh_primitives(model.meshes.size());
 
     for (std::size_t m = 0; m < model.meshes.size(); ++m) {
-        for (const tinygltf::Primitive& primitive : model.meshes[m].primitives) {
+        for (const tinygltf::Primitive &primitive : model.meshes[m].primitives) {
             if (const auto loaded_primitive = add_primitive(model, primitive, default_material, scene)) {
                 mesh_primitives[m].push_back(*loaded_primitive);
             }
@@ -725,7 +725,7 @@ Scene load_gltf(const std::filesystem::path& path) {
         throw std::runtime_error(path.string() + " has no scenes");
     }
 
-    const tinygltf::Scene& root = model.scenes.at(model.defaultScene >= 0 ? model.defaultScene : 0);
+    const tinygltf::Scene &root = model.scenes.at(model.defaultScene >= 0 ? model.defaultScene : 0);
 
     for (const int node : root.nodes) {
         visit_node(model, node, glm::mat4{1.0f}, mesh_primitives, scene);
@@ -814,11 +814,11 @@ struct Texture {
 // without one, and scene image i is texture i + 1. All of them are uploaded
 // and given mipmaps in a single submission.
 std::vector<Texture> create_scene_textures(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const Scene& scene
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const Scene &scene
 );
 ```
 
@@ -923,7 +923,7 @@ DecodedImage decode_image(std::span<const std::uint8_t> encoded) {
 
 // Moves mip levels [base, base + count) of `image` between layouts.
 void transition_mips(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     std::uint32_t base,
     std::uint32_t count,
@@ -958,7 +958,7 @@ void transition_mips(
 
 // Records: staging bytes -> mip 0 -> each smaller mip blitted from the one
 // above it -> every level ready for shaders to sample.
-void record_upload(const vk::raii::CommandBuffer& commands, const Texture& texture, vk::Buffer staging, vk::DeviceSize offset) {
+void record_upload(const vk::raii::CommandBuffer &commands, const Texture &texture, vk::Buffer staging, vk::DeviceSize offset) {
     const vk::Image image = *texture.handle;
 
     transition_mips(commands, image, 0, texture.mip_levels,
@@ -1023,7 +1023,7 @@ void record_upload(const vk::raii::CommandBuffer& commands, const Texture& textu
 }
 
 // An image for `decoded` with room for every mip level, in device-local memory.
-Texture create_texture(const vk::raii::Device& device, const GpuChoice& gpu, const DecodedImage& decoded, vk::Format format) {
+Texture create_texture(const vk::raii::Device &device, const GpuChoice &gpu, const DecodedImage &decoded, vk::Format format) {
     Texture texture;
     texture.format = format;
     texture.extent = vk::Extent2D{.width = decoded.width, .height = decoded.height};
@@ -1092,23 +1092,23 @@ std::vector<DecodedImage> decode_images(std::span<const SceneImage> images) {
 // --- GPU textures ------------------------------------------------------------
 
 std::vector<Texture> create_scene_textures(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const Scene& scene
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const Scene &scene
 ) {
     // Index 0: white, so "no texture" can sample like any other.
     std::vector<DecodedImage> images{DecodedImage{.width = 1, .height = 1, .rgba = {255, 255, 255, 255}}};
     std::vector<vk::Format> formats{vk::Format::eR8G8B8A8Srgb};
 
-    for (DecodedImage& image : decode_images(scene.images)) {
+    for (DecodedImage &image : decode_images(scene.images)) {
         images.push_back(std::move(image));
     }
 
     // sRGB formats make the GPU decode colors to linear when sampling (and
     // filter them correctly when blitting mips); data textures stay as they are.
-    for (const SceneImage& image : scene.images) {
+    for (const SceneImage &image : scene.images) {
         formats.push_back(image.srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm);
     }
 
@@ -1124,18 +1124,18 @@ std::vector<Texture> create_scene_textures(
 
     // One staging buffer holds every image's pixels back to back.
     vk::DeviceSize total = 0;
-    for (const DecodedImage& image : images) {
+    for (const DecodedImage &image : images) {
         total += image.rgba.size();
     }
 
     const Buffer staging = create_buffer(device, gpu, total, vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    auto* mapped = static_cast<std::uint8_t*>(staging.memory.mapMemory(0, total));
+    auto *mapped = static_cast<std::uint8_t*>(staging.memory.mapMemory(0, total));
     std::vector<vk::DeviceSize> offsets;
     vk::DeviceSize offset = 0;
 
-    for (const DecodedImage& image : images) {
+    for (const DecodedImage &image : images) {
         std::memcpy(mapped + offset, image.rgba.data(), image.rgba.size());
         offsets.push_back(offset);
         offset += image.rgba.size();
@@ -1149,7 +1149,7 @@ std::vector<Texture> create_scene_textures(
     }
 
     // Every copy and blit in one command buffer and one submission.
-    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer& commands) {
+    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
         for (std::size_t i = 0; i < textures.size(); ++i) {
             record_upload(commands, textures[i], *staging.handle, offsets[i]);
         }
@@ -1206,15 +1206,15 @@ struct DescriptorHeaps {
 // resource heap) and one sampler (index 0 of the sampler heap), and uploads
 // both heaps to device-local memory.
 DescriptorHeaps create_descriptor_heaps(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const Texture> textures
 );
 
 // Makes `heaps` the ones shaders read for the rest of `commands`.
-void bind_descriptor_heaps(const vk::raii::CommandBuffer& commands, const DescriptorHeaps& heaps);
+void bind_descriptor_heaps(const vk::raii::CommandBuffer &commands, const DescriptorHeaps &heaps);
 ```
 
 `game-engine/src/descriptor_heap.cpp`:
@@ -1235,10 +1235,10 @@ vk::DeviceSize align_up(vk::DeviceSize value, vk::DeviceSize alignment) {
 // Uploads a heap's bytes and checks the GPU address lands where heaps must
 // start: a multiple of `alignment`.
 Buffer upload_heap(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const std::byte> bytes,
     vk::DeviceSize alignment
 ) {
@@ -1257,18 +1257,18 @@ Buffer upload_heap(
 // --- Creating the heaps ------------------------------------------------------
 
 DescriptorHeaps create_descriptor_heaps(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const Texture> textures
 ) {
     const auto properties = gpu.device.getProperties2<
         vk::PhysicalDeviceProperties2,
         vk::PhysicalDeviceDescriptorHeapPropertiesEXT
     >();
-    const auto& heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
-    const auto& limits = properties.get<vk::PhysicalDeviceProperties2>().properties.limits;
+    const auto &heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
+    const auto &limits = properties.get<vk::PhysicalDeviceProperties2>().properties.limits;
 
     DescriptorHeaps heaps;
 
@@ -1355,7 +1355,7 @@ DescriptorHeaps create_descriptor_heaps(
 
 // --- Binding -----------------------------------------------------------------
 
-void bind_descriptor_heaps(const vk::raii::CommandBuffer& commands, const DescriptorHeaps& heaps) {
+void bind_descriptor_heaps(const vk::raii::CommandBuffer &commands, const DescriptorHeaps &heaps) {
     commands.bindResourceHeapEXT(vk::BindHeapInfoEXT{
         .heapRange = {.address = heaps.resources.address, .size = heaps.resources.size},
         .reservedRangeOffset = heaps.resource_reserved_offset,
@@ -1412,9 +1412,9 @@ struct Material {
 // Written with vkCmdPushDataEXT before each draw.
 struct PushData {
     float4x4 view_projection;  // world space -> clip space
-    Vertex* vertices;          // the scene's vertices
-    DrawData* draws;           // one DrawData per draw
-    Material* materials;       // the scene's materials
+    Vertex *vertices;          // the scene's vertices
+    DrawData *draws;           // one DrawData per draw
+    Material *materials;       // the scene's materials
     uint draw_index;           // which DrawData this draw uses
 };
 
@@ -1570,7 +1570,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -1619,13 +1619,13 @@ struct DrawList {
 // Records: swapchain image -> clear color and depth -> draw everything in
 // `draws` with `pipeline`, textures from `heaps` -> ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
     std::array<float, 4> color,
-    const vk::raii::Pipeline& pipeline,
-    const DescriptorHeaps& heaps,
-    const DrawList& draws
+    const vk::raii::Pipeline &pipeline,
+    const DescriptorHeaps &heaps,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
 
@@ -1700,7 +1700,7 @@ void record_frame(
     // One draw per primitive per node. Push data says which DrawData to use;
     // the primitive's index range and vertex offset go to drawIndexed.
     for (std::uint32_t i = 0; i < draws.mesh_draws.size(); ++i) {
-        const Primitive& primitive = draws.primitives[draws.mesh_draws[i].primitive];
+        const Primitive &primitive = draws.primitives[draws.mesh_draws[i].primitive];
 
         const PushData push{
             .view_projection = draws.view_projection,
@@ -1733,7 +1733,7 @@ void record_frame(
 
 // Handles every pending event and fills in `input` for this frame. False once
 // the window was closed or Escape pressed.
-bool poll_events(SDL_Window* window, CameraInput& input) {
+bool poll_events(SDL_Window *window, CameraInput &input) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -1839,7 +1839,7 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             frames.push_back(Frame{
                 .commands = std::move(commands),
                 .image_acquired = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{}),
@@ -1864,7 +1864,7 @@ int main() {
         // the model matrix itself would tilt it off the surface.
         std::vector<DrawData> draw_data;
 
-        for (const MeshDraw& draw : scene.draws) {
+        for (const MeshDraw &draw : scene.draws) {
             draw_data.push_back(DrawData{
                 .model = draw.model,
                 .normal_matrix = glm::transpose(glm::inverse(draw.model)),
@@ -1895,7 +1895,7 @@ int main() {
 
         std::vector<Material> materials;
 
-        for (const SceneMaterial& material : scene.materials) {
+        for (const SceneMaterial &material : scene.materials) {
             materials.push_back(Material{
                 .base_color_factor = material.base_color_factor,
                 .base_color_texture = static_cast<std::uint32_t>(material.base_color_image + 1),
@@ -1954,7 +1954,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer from last time.
             (void)device.waitForFences(*frame.done, vk::True, no_timeout);
@@ -2016,7 +2016,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

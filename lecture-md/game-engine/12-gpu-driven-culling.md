@@ -28,7 +28,7 @@ In `game-engine/src/vulkan_setup.cpp`, replace `has_features` with:
 ```cpp
 // Only valid once has_extensions() is true: the extension structs in the
 // chain may not be queried on a device that lacks their extension.
-bool has_features(const vk::raii::PhysicalDevice& device) {
+bool has_features(const vk::raii::PhysicalDevice &device) {
     const Features supported = device.getFeatures2<
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan12Features,
@@ -39,9 +39,9 @@ bool has_features(const vk::raii::PhysicalDevice& device) {
         vk::PhysicalDeviceRayQueryFeaturesKHR
     >();
 
-    const auto& vulkan10 = supported.get<vk::PhysicalDeviceFeatures2>().features;
-    const auto& vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
-    const auto& vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
+    const auto &vulkan10 = supported.get<vk::PhysicalDeviceFeatures2>().features;
+    const auto &vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
+    const auto &vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
 
     return vulkan10.independentBlend
         && vulkan10.multiDrawIndirect
@@ -63,7 +63,7 @@ bool has_features(const vk::raii::PhysicalDevice& device) {
 
 Then replace `create_device` with:
 ```cpp
-vk::raii::Device create_device(const GpuChoice& gpu) {
+vk::raii::Device create_device(const GpuChoice &gpu) {
     const float priority = 1.0f;
 
     const vk::DeviceQueueCreateInfo queue_info{
@@ -239,7 +239,7 @@ struct Scene {
 
 // Loads the default scene of a .gltf or .glb file, with its materials,
 // samplers, lights and images, still encoded.
-Scene load_gltf(const std::filesystem::path& path);
+Scene load_gltf(const std::filesystem::path &path);
 ```
 
 In `game-engine/src/scene.cpp`, replace `visit_node` with:
@@ -248,20 +248,20 @@ In `game-engine/src/scene.cpp`, replace `visit_node` with:
 // own; every primitive of a node's mesh becomes one draw, and a node's light
 // is placed by the same transform.
 void visit_node(
-    const tinygltf::Model& model,
+    const tinygltf::Model &model,
     int node_index,
-    const glm::mat4& parent,
-    const std::vector<std::vector<LoadedPrimitive>>& mesh_primitives,
-    Scene& scene
+    const glm::mat4 &parent,
+    const std::vector<std::vector<LoadedPrimitive>> &mesh_primitives,
+    Scene &scene
 ) {
-    const tinygltf::Node& node = model.nodes.at(node_index);
+    const tinygltf::Node &node = model.nodes.at(node_index);
     const glm::mat4 world = parent * local_transform(node);
 
     if (node.mesh >= 0) {
         // A negative determinant means the transform mirrors space.
         const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0f;
 
-        for (const LoadedPrimitive& primitive : mesh_primitives.at(node.mesh)) {
+        for (const LoadedPrimitive &primitive : mesh_primitives.at(node.mesh)) {
             MeshDraw draw{
                 .model = world,
                 .primitive = primitive.index,
@@ -740,13 +740,13 @@ struct EnvironmentInfo {
 struct FrameData {
     float4x4 view_projection;          // world space -> clip space
     float4x4 inverse_view_projection;  // clip space -> world space
-    Vertex* vertices;                  // the scene's vertices
-    uint* indices;                     // the scene's indices
-    DrawData* draws;                   // one DrawData per draw
-    uint* instances;                   // the cull's visible draws: what each instance draws
-    Material* materials;               // the scene's materials
-    Light* lights;                     // the file's lights
-    EnvironmentInfo* environment;      // the sky's diffuse light and the sun
+    Vertex *vertices;                  // the scene's vertices
+    uint *indices;                     // the scene's indices
+    DrawData *draws;                   // one DrawData per draw
+    uint *instances;                   // the cull's visible draws: what each instance draws
+    Material *materials;               // the scene's materials
+    Light *lights;                     // the file's lights
+    EnvironmentInfo *environment;      // the sky's diffuse light and the sun
     uint64_t scene_tlas;               // the top-level acceleration structure's address
     float3 camera_position;
     float exposure;                    // scene nits -> tone mapper input
@@ -766,7 +766,7 @@ struct FrameData {
 
 // Written with vkCmdPushDataEXT before each pipeline's draws.
 struct PushData {
-    FrameData* frame;  // this frame's data
+    FrameData *frame;  // this frame's data
 };
 
 // --- Normals in two numbers ------------------------------------------------------
@@ -905,10 +905,10 @@ struct DrawCulling {
 
 // `draws` has one CullDraw per draw, in draw order.
 DrawCulling create_draw_culling(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const CullDraw> draws
 );
 
@@ -923,15 +923,15 @@ struct CullTotals {
 // instances. The totals are also copied into `readback`, a host-visible
 // buffer holding one CullTotals, for the CPU to read once the frame is done.
 void record_culling(
-    const vk::raii::CommandBuffer& commands,
-    const DrawCulling& culling,
+    const vk::raii::CommandBuffer &commands,
+    const DrawCulling &culling,
     vk::DeviceAddress frame,
     vk::Buffer readback
 );
 
 // Draws list `list`'s commands for this frame, in one indirect call. The
 // pipeline, its push data and the list's dynamic state must already be set.
-void draw_list(const vk::raii::CommandBuffer& commands, const DrawCulling& culling, std::uint32_t list);
+void draw_list(const vk::raii::CommandBuffer &commands, const DrawCulling &culling, std::uint32_t list);
 ```
 
 `game-engine/src/culling.cpp`:
@@ -958,7 +958,7 @@ std::uint32_t workgroups(std::uint32_t threads) {
 
 // A device-local buffer of `count` 32-bit numbers, written and read only by
 // the GPU, at least one long: a buffer can't be empty.
-Buffer gpu_numbers(const vk::raii::Device& device, const GpuChoice& gpu, std::size_t count, vk::BufferUsageFlags usage = {}) {
+Buffer gpu_numbers(const vk::raii::Device &device, const GpuChoice &gpu, std::size_t count, vk::BufferUsageFlags usage = {}) {
     return create_buffer(device, gpu, std::max<std::size_t>(count, 1) * sizeof(std::uint32_t),
         vk::BufferUsageFlagBits::eShaderDeviceAddress | usage, vk::MemoryPropertyFlagBits::eDeviceLocal);
 }
@@ -966,7 +966,7 @@ Buffer gpu_numbers(const vk::raii::Device& device, const GpuChoice& gpu, std::si
 // Makes the `dst` work wait for the `src` work, and the `src` writes visible
 // to the `dst` accesses: for buffers, which need no layouts.
 void memory_barrier(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::PipelineStageFlags2 src_stage,
     vk::AccessFlags2 src_access,
     vk::PipelineStageFlags2 dst_stage,
@@ -983,7 +983,7 @@ void memory_barrier(
 }
 
 // Between two compute steps: the first's writes, visible to the second.
-void compute_to_compute(const vk::raii::CommandBuffer& commands) {
+void compute_to_compute(const vk::raii::CommandBuffer &commands) {
     memory_barrier(commands,
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageRead);
@@ -994,10 +994,10 @@ void compute_to_compute(const vk::raii::CommandBuffer& commands) {
 // --- Creating ----------------------------------------------------------------
 
 DrawCulling create_draw_culling(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const CullDraw> draws
 ) {
     DrawCulling culling;
@@ -1022,7 +1022,7 @@ DrawCulling create_draw_culling(
     std::vector<DrawGroup> groups;
 
     for (std::uint32_t position = 0; position < order.size(); ++position) {
-        const CullDraw& draw = draws[order[position]];
+        const CullDraw &draw = draws[order[position]];
 
         if (groups.empty() || groups.back().list != draw.list
             || draws[order[groups.back().first]].primitive != draw.primitive) {
@@ -1043,7 +1043,7 @@ DrawCulling create_draw_culling(
     culling.group_count = static_cast<std::uint32_t>(groups.size());
 
     std::uint32_t next_group = 0;
-    for (DrawListRange& range : culling.list_ranges) {
+    for (DrawListRange &range : culling.list_ranges) {
         range.first_group = next_group;
         next_group += range.group_count;
     }
@@ -1092,8 +1092,8 @@ DrawCulling create_draw_culling(
 // --- Recording ---------------------------------------------------------------
 
 void record_culling(
-    const vk::raii::CommandBuffer& commands,
-    const DrawCulling& culling,
+    const vk::raii::CommandBuffer &commands,
+    const DrawCulling &culling,
     vk::DeviceAddress frame,
     vk::Buffer readback
 ) {
@@ -1109,7 +1109,7 @@ void record_culling(
     // Every step reads its buffers through the one table.
     const CullPushData push{.frame = frame, .tables = culling.tables.address};
 
-    const auto step = [&](const vk::raii::Pipeline& pipeline, std::uint32_t workgroup_count) {
+    const auto step = [&](const vk::raii::Pipeline &pipeline, std::uint32_t workgroup_count) {
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
         commands.pushDataEXT(vk::PushDataInfoEXT{
             .offset = 0,
@@ -1167,10 +1167,10 @@ void record_culling(
         vk::PipelineStageFlagBits2::eHost, vk::AccessFlagBits2::eHostRead);
 }
 
-void draw_list(const vk::raii::CommandBuffer& commands, const DrawCulling& culling, std::uint32_t list) {
+void draw_list(const vk::raii::CommandBuffer &commands, const DrawCulling &culling, std::uint32_t list) {
     // The GPU reads the list's count from `counts`, and draws that many of the
     // commands at the start of its run, never more than the run is long.
-    const DrawListRange& range = culling.list_ranges[list];
+    const DrawListRange &range = culling.list_ranges[list];
 
     commands.drawIndexedIndirectCount(
         *culling.commands.handle, range.first_group * command_size,
@@ -1224,23 +1224,23 @@ struct DrawListRange {
 };
 
 struct CullTables {
-    uint* order;            // draw indices, in the cull's order
-    DrawGroup* groups;
-    DrawListRange* lists;
-    uint* visible;          // per position in the order
-    uint* draw_slots;       // prefix sums of visible, then their total
-    uint* group_flags;      // per group
-    uint* group_slots;      // prefix sums of group_flags, then their total
-    uint* instances;        // the visible draws' indices
-    DrawCommand* commands;  // per group
-    uint* counts;           // per list
+    uint *order;            // draw indices, in the cull's order
+    DrawGroup *groups;
+    DrawListRange *lists;
+    uint *visible;          // per position in the order
+    uint *draw_slots;       // prefix sums of visible, then their total
+    uint *group_flags;      // per group
+    uint *group_slots;      // prefix sums of group_flags, then their total
+    uint *instances;        // the visible draws' indices
+    DrawCommand *commands;  // per group
+    uint *counts;           // per list
     uint draw_count;
     uint group_count;
 };
 
 struct CullPushData {
-    FrameData* frame;
-    CullTables* tables;
+    FrameData *frame;
+    CullTables *tables;
 };
 
 [[vk::push_constant]]
@@ -1298,7 +1298,7 @@ bool in_view(float4x4 view_projection, float3 lo, float3 hi) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cullMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint position = id.x;
 
     if (position >= tables.draw_count) {
@@ -1327,7 +1327,7 @@ static const uint scan_size = 256;
 groupshared uint scan_numbers[scan_size];
 groupshared uint scan_carry;
 
-void exclusive_scan(uint* input, uint* output, uint count, uint thread) {
+void exclusive_scan(uint *input, uint *output, uint count, uint thread) {
     if (thread == 0) {
         scan_carry = 0;
     }
@@ -1367,14 +1367,14 @@ void exclusive_scan(uint* input, uint* output, uint count, uint thread) {
 [shader("compute")]
 [numthreads(scan_size, 1, 1)]
 void scanDrawsMain(uint3 id : SV_GroupThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     exclusive_scan(tables.visible, tables.draw_slots, tables.draw_count, id.x);
 }
 
 [shader("compute")]
 [numthreads(scan_size, 1, 1)]
 void scanGroupsMain(uint3 id : SV_GroupThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     exclusive_scan(tables.group_flags, tables.group_slots, tables.group_count, id.x);
 }
 
@@ -1382,14 +1382,14 @@ void scanGroupsMain(uint3 id : SV_GroupThreadID) {
 
 // A group's draws are a run of the order, so its visible draws are a run of
 // the instances, from draw_slots[first] to draw_slots[first + count].
-uint visible_in_group(CullTables* tables, DrawGroup group) {
+uint visible_in_group(CullTables *tables, DrawGroup group) {
     return tables.draw_slots[group.first + group.count] - tables.draw_slots[group.first];
 }
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void markGroupsMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
 
     if (id.x >= tables.group_count) {
         return;
@@ -1403,7 +1403,7 @@ void markGroupsMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void writeInstancesMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint position = id.x;
 
     if (position >= tables.draw_count || tables.visible[position] == 0) {
@@ -1421,7 +1421,7 @@ void writeInstancesMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void writeCommandsMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint group_index = id.x;
 
     if (group_index >= tables.group_count) {
@@ -1518,7 +1518,7 @@ struct VertexOutput {
 // in `instances`, so each instance finds its draw there.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Vertex vertex = frame.vertices[vertex_id];
     const uint draw_index = frame.instances[instance];
     const DrawData draw = frame.draws[draw_index];
@@ -1740,7 +1740,7 @@ float3 offset_ray_origin(float3 position, float3 normal) {
 // materials, so the texture's heap index differs between them: that's fine,
 // since descriptor heap access is non-uniform unless the SPIR-V marks it
 // uniform, and Slang doesn't.
-float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
+float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
     const uint first = draw.first_index + triangle * 3;
     const Vertex v0 = frame.vertices[int(frame.indices[first]) + draw.vertex_offset];
     const Vertex v1 = frame.vertices[int(frame.indices[first + 1]) + draw.vertex_offset];
@@ -1766,7 +1766,7 @@ float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint t
 //   - a blended one comes back as a candidate that lets 1 - alpha of the
 //     light through, as the transparency pass's reveal sum does. It never
 //     ends the ray: the light goes on, dimmed, to whatever is behind.
-float light_visibility(FrameData* frame, float3 origin, float3 direction, float distance) {
+float light_visibility(FrameData *frame, float3 origin, float3 direction, float distance) {
     const RaytracingAccelerationStructure scene = RaytracingAccelerationStructure(frame.scene_tlas);
 
     RayDesc ray;
@@ -1810,7 +1810,7 @@ float3 shadow_ray_origin(float3 position, float3 face_normal, float3 l) {
 // shade(), times how much of the light gets through. A ray is only traced
 // when the light could reach the surface at all.
 float3 shade_shadowed(
-    Surface surface, FrameData* frame, float3 position, float3 face_normal,
+    Surface surface, FrameData *frame, float3 position, float3 face_normal,
     float3 l, float3 illuminance, float distance
 ) {
     if (dot(surface.normal, l) <= 0.0 || all(illuminance == 0.0)) {
@@ -1861,7 +1861,7 @@ float3 punctual_light(Light light, float3 position, out float3 l, out float dist
 
 // The sky's irradiance on a surface facing `n`, in lux: its nine spherical
 // harmonics coefficients, each weighted by its basis function at `n`.
-float3 sky_irradiance(EnvironmentInfo* environment, float3 n) {
+float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     const float basis[9] = {
         0.282095,
         0.488603 * n.y,
@@ -1928,7 +1928,7 @@ float specular_occlusion(float n_dot_v, float visibility, float alpha) {
 //     the BRDF reflects overall (the table, as a scale and bias on F0),
 //     dimmed by the specular occlusion.
 //   - A roughness-aware Fresnel term splits the light between the two.
-float3 shade_environment(Surface surface, FrameData* frame, float roughness, float visibility, float3 irradiance_normal) {
+float3 shade_environment(Surface surface, FrameData *frame, float roughness, float visibility, float3 irradiance_normal) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
     const float3 f0 = lerp(float3(0.04), surface.base_color, surface.metallic);
     const float3 fresnel = f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(1.0 - n_dot_v, 5.0);
@@ -1974,7 +1974,7 @@ float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
 // surfaces the lighting pass will shade.
 [shader("fragment")]
 float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
     if (alpha_mode == alpha_mask) {
@@ -1994,7 +1994,7 @@ float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Ta
 // transparency pass adds it into its sums.
 // `front_face`: whether this triangle faces the camera.
 float4 shade_fragment(VertexOutput input, bool front_face) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
     // Base color: factor x texture x vertex color. sRGB textures are decoded
@@ -2227,9 +2227,9 @@ struct Frame {
     vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
     vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     Buffer data;                                   // one FrameData, host-visible
-    FrameData* mapped = nullptr;                   // `data`, mapped for the CPU to write
+    FrameData *mapped = nullptr;                   // `data`, mapped for the CPU to write
     Buffer cull_totals;                            // the cull's totals, copied out, host-visible
-    const CullTotals* totals = nullptr;            // `cull_totals`, mapped for the CPU to read
+    const CullTotals *totals = nullptr;            // `cull_totals`, mapped for the CPU to read
 };
 
 // --- Recording a frame -------------------------------------------------------
@@ -2237,7 +2237,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -2326,11 +2326,11 @@ struct DrawList {
 // says where the frame's data is; each instance finds its DrawData through
 // the cull's instances.
 void draw_mode(
-    const vk::raii::CommandBuffer& commands,
-    const DrawCulling& culling,
-    const DrawList& draws,
+    const vk::raii::CommandBuffer &commands,
+    const DrawCulling &culling,
+    const DrawList &draws,
     AlphaMode mode,
-    const vk::raii::Pipeline& pipeline
+    const vk::raii::Pipeline &pipeline
 ) {
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
@@ -2360,7 +2360,7 @@ void draw_mode(
 
 // The viewport and scissor every pass uses: the whole image. The pipelines
 // leave both dynamic.
-void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) {
+void set_viewport(const vk::raii::CommandBuffer &commands, vk::Extent2D extent) {
     commands.setViewport(0, vk::Viewport{
         .x = 0.0f,
         .y = 0.0f,
@@ -2383,14 +2383,14 @@ void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) 
 //   5. tone mapping, from the HDR image into the swapchain image, which is
 //      then ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
-    const ScenePipelines& pipelines,
-    const AmbientOcclusion& ambient_occlusion,
-    const DrawCulling& culling,
-    const DescriptorHeaps& heaps,
-    const DrawList& draws
+    const ScenePipelines &pipelines,
+    const AmbientOcclusion &ambient_occlusion,
+    const DrawCulling &culling,
+    const DescriptorHeaps &heaps,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
     const vk::Image hdr = *swapchain.hdr.handle;
@@ -2723,7 +2723,7 @@ constexpr std::array view_names{
 //   - =   exposure, half a stop darker or brighter: like a camera's
 //         exposure compensation, + is brighter
 // Holding a key repeats it.
-bool poll_events(SDL_Window* window, CameraInput& input, Settings& settings) {
+bool poll_events(SDL_Window *window, CameraInput &input, Settings &settings) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -2873,18 +2873,18 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             // Host-coherent: the CPU's writes reach the GPU without a flush.
             Buffer data = create_buffer(device, *gpu, sizeof(FrameData),
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
+            auto *mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
 
             // Starts zeroed: the first wait on each frame reads it before
             // the GPU has written it.
             Buffer cull_totals = create_buffer(device, *gpu, sizeof(CullTotals), vk::BufferUsageFlagBits::eTransferDst,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* totals = static_cast<CullTotals*>(cull_totals.memory.mapMemory(0, sizeof(CullTotals)));
+            auto *totals = static_cast<CullTotals*>(cull_totals.memory.mapMemory(0, sizeof(CullTotals)));
             *totals = CullTotals{.visible_draws = 0, .commands = 0};
 
             frames.push_back(Frame{
@@ -2918,9 +2918,9 @@ int main() {
         std::vector<CullDraw> cull_draws;
         std::array<std::size_t, 3> mode_draws{};  // how many draws of each alpha mode
 
-        for (const MeshDraw& draw : scene.draws) {
-            const Primitive& primitive = scene.primitives[draw.primitive];
-            const SceneMaterial& material = scene.materials[primitive.material];
+        for (const MeshDraw &draw : scene.draws) {
+            const Primitive &primitive = scene.primitives[draw.primitive];
+            const SceneMaterial &material = scene.materials[primitive.material];
             const std::uint32_t list = draw_list_index(material.alpha_mode, material.double_sided, draw.mirrored);
 
             draw_data.push_back(DrawData{
@@ -3008,7 +3008,7 @@ int main() {
         // The swapchain's images are recreated with it, so their descriptors
         // are rewritten every time: after this, only while the GPU is idle.
         const auto describe_screen = [&] {
-            const auto whole = [](const Image& image, vk::ImageAspectFlags aspect) {
+            const auto whole = [](const Image &image, vk::ImageAspectFlags aspect) {
                 return vk::ImageViewCreateInfo{
                     .image = *image.handle,
                     .viewType = vk::ImageViewType::e2D,
@@ -3056,7 +3056,7 @@ int main() {
         // Heap indices are one past the scene's: image i is texture i + 1 and
         // sampler i is sampler i + 1, so "none" (-1) becomes 0, the white
         // texture or the default sampler.
-        const auto slot = [](const TextureRef& ref) {
+        const auto slot = [](const TextureRef &ref) {
             return TextureSlot{
                 .texture = static_cast<std::uint32_t>(ref.image + 1),
                 .sampler = static_cast<std::uint32_t>(ref.sampler + 1),
@@ -3066,7 +3066,7 @@ int main() {
 
         std::vector<Material> materials;
 
-        for (const SceneMaterial& material : scene.materials) {
+        for (const SceneMaterial &material : scene.materials) {
             materials.push_back(Material{
                 .base_color_factor = material.base_color_factor,
                 .emissive_factor = material.emissive_factor,
@@ -3154,7 +3154,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer and
             //    data from last time, then write this frame's data.
@@ -3280,7 +3280,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

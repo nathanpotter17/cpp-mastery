@@ -121,7 +121,7 @@ vk::raii::Instance create_instance(
     return vk::raii::Instance(context, create_info);
 }
 
-vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance& instance) {
+vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance &instance) {
     using Severity = vk::DebugUtilsMessageSeverityFlagBitsEXT;
     using Type = vk::DebugUtilsMessageTypeFlagBitsEXT;
 
@@ -144,3 +144,112 @@ vk::raii::SurfaceKHR create_surface(const vk::raii::Instance &instance, SDL_Wind
     return vk::raii::SurfaceKHR(instance, surface);
 }
 
+std::optional<GpuChoice> pick_gpu(const vk::raii::Instance &instance, const vk::raii::SurfaceKHR &surface) {
+    std::optional<GpuChoice> best;
+    int best_rank = -1;
+
+    for (const vk::raii::PhysicalDevice &device : instance.enumeratePhysicalDevices()) {
+        const vk::PhysicalDeviceProperties properties = device.getProperties();
+        const std::vector<vk::QueueFamilyProperties> families = device.getQueueFamilyProperties();
+
+        // First queue family that can both draw and present to this surface.
+        std::optional<std::uint32_t> family;
+
+        for (std::uint32_t i = 0; i < families.size(); ++i) {
+            if ((families[i].queueFlags & vk::QueueFlagBits::eGraphics) && device.getSurfaceSupportKHR(i, *surface)) {
+                family = i;
+                break;
+            }
+        }
+
+        // Each check may only run once the one before it has passed.
+        std::string_view verdict = "usable";
+
+        if (!family) {
+            verdict = "can't present";
+        } else if (properties.apiVersion < vk::ApiVersion14) {
+            verdict = "needs Vulkan 1.4";
+        } else if (!has_extensions(device)) {
+            verdict = "no descriptor heap";
+        } else if (!has_features(device)) {
+            verdict = "missing features";
+        }
+
+        std::println(
+            "  {:<45} {:<14} Vulkan {}.{}.{}  {}",
+            properties.deviceName.data(),
+            vk::to_string(properties.deviceType),
+            vk::apiVersionMajor(properties.apiVersion),
+            vk::apiVersionMinor(properties.apiVersion),
+            vk::apiVersionPatch(properties.apiVersion),
+            verdict
+        );
+
+        if (verdict == "usable" && rank(properties.deviceType) > best_rank) {
+            best = GpuChoice{device, *family};
+            best_rank = rank(properties.deviceType);
+        }
+    }
+
+    return best;
+}
+
+vk::raii::Device create_device(const GpuChoice &gpu) {
+    const float priority = 1.0f;
+
+    const vk::DeviceQueueCreateInfo queue_info{
+        .queueFamilyIndex = gpu.queue_family,
+        .queueCount = 1,
+        .pQueuePriorities = &priority,
+    };
+
+    // StructureChain fills in each struct's pNext, so the order here is the
+    // order of the chain. Features2 at the head stands in for pEnabledFeatures.
+    const Features features{
+        vk::PhysicalDeviceFeatures2{
+            .features = {.samplerAnisotropy = vk::True},  // sharper textures seen at an angle
+        },
+        vk::PhysicalDeviceVulkan12Features{
+            .scalarBlockLayout = vk::True,    // shader structs laid out like C++ structs
+            .bufferDeviceAddress = vk::True,  // buffers as 64-bit GPU pointers
+        },
+        vk::PhysicalDeviceVulkan13Features{
+            .synchronization2 = vk::True,     // vkCmdPipelineBarrier2, vkQueueSubmit2
+            .dynamicRendering = vk::True,     // vkCmdBeginRendering, no VkRenderPass
+        },
+        vk::PhysicalDeviceDescriptorHeapFeaturesEXT{
+            .descriptorHeap = vk::True,       // descriptors live in buffers we own
+        },
+        vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR{
+            .shaderUntypedPointers = vk::True,
+        },
+    };
+
+    const vk::DeviceCreateInfo create_info{
+        .pNext = &features.get<vk::PhysicalDeviceFeatures2>(),
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &queue_info,
+        .enabledExtensionCount = static_cast<std::uint32_t>(device_extensions.size()),
+        .ppEnabledExtensionNames = device_extensions.data(),
+    };
+
+    return vk::raii::Device(gpu.device, create_info);
+}
+
+// Descriptor heap limits
+
+void print_descriptor_heap_properties(const GpuChoice &gpu) {
+    const auto properties = gpu.device.getProperties2<
+        vk::PhysicalDeviceProperties2,
+        vk::PhysicalDeviceDescriptorHeapPropertiesEXT
+    >();
+    const auto &heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
+
+    std::println("Descriptor heap:");
+    std::println("  image descriptor    {:>4} bytes, {:>3}-byte aligned", heap.imageDescriptorSize, heap.imageDescriptorAlignment);
+    std::println("  buffer descriptor   {:>4} bytes, {:>3}-byte aligned", heap.bufferDescriptorSize, heap.bufferDescriptorAlignment);
+    std::println("  sampler descriptor  {:>4} bytes, {:>3}-byte aligned", heap.samplerDescriptorSize, heap.samplerDescriptorAlignment);
+    std::println("  resource heap       up to {} bytes, {} reserved for the driver", heap.maxResourceHeapSize, heap.minResourceHeapReservedRange);
+    std::println("  sampler heap        up to {} bytes, {} reserved for the driver", heap.maxSamplerHeapSize, heap.minSamplerHeapReservedRange);
+    std::println("  push data           {} bytes", heap.maxPushDataSize);
+}

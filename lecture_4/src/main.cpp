@@ -48,7 +48,7 @@ void print_types() {
 
     // An enum class has no formatter, so we print its underlying char.
     std::print("operations:");
-    for (const Operation& operation : operations) {
+    for (const Operation &operation : operations) {
         std::print(" {} {}", std::to_underlying(operation.symbol), operation.name);
     }
     std::println();
@@ -88,7 +88,7 @@ int main() {
 
     // The lambda captures results and uses by reference ([&]), so it can
     // fill them in. That capture is why it needs a std::function.
-    run_batch(inputs, [&](std::string_view input, const std::optional<Expression>& expression, Result value) {
+    run_batch(inputs, [&](std::string_view input, const std::optional<Expression> &expression, Result value) {
         if (!expression) {
             std::println("{:<20?} {:>12}", input, "bad input");
             return;
@@ -110,12 +110,12 @@ int main() {
 
     // --- The summary ---------------------------------------------------------
 
-    const auto failed = std::ranges::count_if(results, [](const Result& result) { return !result; });
+    const auto failed = std::ranges::count_if(results, [](const Result &result) { return !result; });
 
     // A lazy view: nothing is filtered or copied until something reads it.
     auto values = results
-        | std::views::filter([](const Result& result) { return result.has_value(); })
-        | std::views::transform([](const Result& result) { return *result; });
+        | std::views::filter([](const Result &result) { return result.has_value(); })
+        | std::views::transform([](const Result &result) { return *result; });
 
     const auto summary = summarize(values);
     static_assert(std::is_same_v<decltype(summary)::total_type, i64>);

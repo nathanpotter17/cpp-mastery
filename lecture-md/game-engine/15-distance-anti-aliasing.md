@@ -59,8 +59,8 @@ A blit averages a 2 × 2 block of texels, with no idea what they hold. Averaging
 // --- Data shared with C++ (src/includes/shader_types.h) ----------------------
 
 struct MipPushData {
-    uint* source;         // texels read: the level above, or the level itself
-    uint* target;         // texels written, or the histograms and scales
+    uint *source;         // texels read: the level above, or the level itself
+    uint *target;         // texels written, or the histograms and scales
     uint2 source_size;    // in texels
     uint2 target_size;
     uint kind;            // a mip_ kind; coverageMain: the level count
@@ -255,9 +255,9 @@ void coverageMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    uint* top = push.source;
-    uint* histogram = push.source + 256 * level;
-    float* scales = (float*)push.target;
+    uint *top = push.source;
+    uint *histogram = push.source + 256 * level;
+    float *scales = (float*)push.target;
 
     // The top level's covered share: texels at or above the cutoff.
     const uint first_covered = uint(ceil(push.cutoff * 255.0 - 1e-3));
@@ -830,7 +830,7 @@ DecodedImage decode_image(std::span<const std::uint8_t> encoded) {
 
 // Moves mip levels [base, base + count) of `image` between layouts.
 void transition_mips(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     std::uint32_t base,
     std::uint32_t count,
@@ -865,7 +865,7 @@ void transition_mips(
 
 // Makes writes by `src_stage` visible to `dst_stage`, for every buffer.
 void memory_barrier(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::PipelineStageFlags2 src_stage,
     vk::AccessFlags2 src_access,
     vk::PipelineStageFlags2 dst_stage,
@@ -882,7 +882,7 @@ void memory_barrier(
 }
 
 // An image for `decoded` with room for every mip level, in device-local memory.
-Texture create_texture(const vk::raii::Device& device, const GpuChoice& gpu, const DecodedImage& decoded, vk::Format format) {
+Texture create_texture(const vk::raii::Device &device, const GpuChoice &gpu, const DecodedImage &decoded, vk::Format format) {
     Texture texture;
     texture.format = format;
     texture.extent = vk::Extent2D{.width = decoded.width, .height = decoded.height};
@@ -929,15 +929,15 @@ struct MipChain {
 // What each image is used for, from the materials: how its mips average
 // (MipKind), and, for a masked material's base color, the alpha its texels
 // must reach to be kept. Texture i + 1 is image i; texture 0 is white.
-std::vector<MipChain> plan_mips(const Scene& scene, std::span<const DecodedImage> images) {
+std::vector<MipChain> plan_mips(const Scene &scene, std::span<const DecodedImage> images) {
     std::vector<MipChain> chains(images.size());
     std::vector<bool> as_normal(images.size(), false);
     std::vector<bool> as_other(images.size(), false);        // anything but a normal map
     std::vector<bool> as_see_through(images.size(), false);  // a masked or blended base color
     std::vector<bool> as_opaque_color(images.size(), false); // any other color: its alpha means nothing
 
-    for (const SceneMaterial& material : scene.materials) {
-        for (const TextureRef* ref : {&material.base_color, &material.metallic_roughness, &material.occlusion, &material.emissive}) {
+    for (const SceneMaterial &material : scene.materials) {
+        for (const TextureRef *ref : {&material.base_color, &material.metallic_roughness, &material.occlusion, &material.emissive}) {
             if (ref->image >= 0) {
                 as_other[static_cast<std::size_t>(ref->image) + 1] = true;
             }
@@ -961,7 +961,7 @@ std::vector<MipChain> plan_mips(const Scene& scene, std::span<const DecodedImage
         // reach cutoff / factor. Above 1, nothing is kept at any level.
         const float factor = material.base_color_factor.a;
         if (material.alpha_mode == AlphaMode::mask && material.base_color.image >= 0 && factor > 0.0f) {
-            MipChain& chain = chains[static_cast<std::size_t>(material.base_color.image) + 1];
+            MipChain &chain = chains[static_cast<std::size_t>(material.base_color.image) + 1];
             const float cutoff = material.alpha_cutoff / factor;
 
             // A texture shared by masked materials with different cutoffs
@@ -975,7 +975,7 @@ std::vector<MipChain> plan_mips(const Scene& scene, std::span<const DecodedImage
     vk::DeviceSize offset = 0;
 
     for (std::size_t i = 0; i < images.size(); ++i) {
-        MipChain& chain = chains[i];
+        MipChain &chain = chains[i];
         const bool srgb = i == 0 || scene.images[i - 1].srgb;
 
         // Colors weight by alpha only where every use takes alpha as
@@ -1005,8 +1005,8 @@ std::vector<MipChain> plan_mips(const Scene& scene, std::span<const DecodedImage
 // Runs one of mips.slang's steps, over `x` x `y` threads in workgroups of
 // `group_x` x `group_y`.
 void dispatch_mips(
-    const vk::raii::CommandBuffer& commands,
-    const MipPushData& push,
+    const vk::raii::CommandBuffer &commands,
+    const MipPushData &push,
     std::uint32_t x,
     std::uint32_t y,
     std::uint32_t group_x,
@@ -1055,24 +1055,24 @@ std::vector<DecodedImage> decode_images(std::span<const SceneImage> images) {
 // --- GPU textures ------------------------------------------------------------
 
 std::vector<Texture> create_scene_textures(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const Scene& scene
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const Scene &scene
 ) {
     // Index 0: white, so "no texture" can sample like any other.
     std::vector<DecodedImage> images{DecodedImage{.width = 1, .height = 1, .rgba = {255, 255, 255, 255}}};
     std::vector<vk::Format> formats{vk::Format::eR8G8B8A8Srgb};
 
-    for (DecodedImage& image : decode_images(scene.images)) {
+    for (DecodedImage &image : decode_images(scene.images)) {
         images.push_back(std::move(image));
     }
 
     // sRGB formats make the GPU decode colors to linear when sampling; data
     // textures stay as they are. Vulkan requires both formats to support
     // linear filtering, so every GPU can sample them smoothly.
-    for (const SceneImage& image : scene.images) {
+    for (const SceneImage &image : scene.images) {
         formats.push_back(image.srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm);
     }
 
@@ -1080,18 +1080,18 @@ std::vector<Texture> create_scene_textures(
 
     // One staging buffer holds every image's pixels back to back.
     vk::DeviceSize total = 0;
-    for (const DecodedImage& image : images) {
+    for (const DecodedImage &image : images) {
         total += image.rgba.size();
     }
 
     const Buffer staging = create_buffer(device, gpu, total, vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    auto* mapped = static_cast<std::uint8_t*>(staging.memory.mapMemory(0, total));
+    auto *mapped = static_cast<std::uint8_t*>(staging.memory.mapMemory(0, total));
     std::vector<vk::DeviceSize> offsets;
     vk::DeviceSize offset = 0;
 
-    for (const DecodedImage& image : images) {
+    for (const DecodedImage &image : images) {
         std::memcpy(mapped + offset, image.rgba.data(), image.rgba.size());
         offsets.push_back(offset);
         offset += image.rgba.size();
@@ -1101,7 +1101,7 @@ std::vector<Texture> create_scene_textures(
 
     // Every level of every texture, in device memory, where compute shaders
     // make the levels below the top through its address.
-    const MipChain& last = chains.back();
+    const MipChain &last = chains.back();
     const vk::DeviceSize mip_bytes = last.offsets.back() + vk::DeviceSize{last.sizes.back().x} * last.sizes.back().y * 4;
     const Buffer mips = create_buffer(device, gpu, mip_bytes,
         vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress
@@ -1111,7 +1111,7 @@ std::vector<Texture> create_scene_textures(
     // Masked base colors also need, per level, a 256-bin alpha histogram,
     // then, per level, a scale: in a buffer of their own, zeroed first.
     vk::DeviceSize coverage_bytes = 4;  // never empty
-    for (MipChain& chain : chains) {
+    for (MipChain &chain : chains) {
         if (chain.cutoff > 0.0f) {
             chain.coverage = coverage_bytes;
             coverage_bytes += chain.sizes.size() * (256 + 1) * 4;
@@ -1134,15 +1134,15 @@ std::vector<Texture> create_scene_textures(
         textures.push_back(create_texture(device, gpu, images[i], formats[i]));
     }
 
-    const auto level_address = [&](const MipChain& chain, std::size_t level) { return mips.address + chain.offsets[level]; };
-    const auto compute_to_compute = [](const vk::raii::CommandBuffer& commands) {
+    const auto level_address = [&](const MipChain &chain, std::size_t level) { return mips.address + chain.offsets[level]; };
+    const auto compute_to_compute = [](const vk::raii::CommandBuffer &commands) {
         memory_barrier(commands,
             vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
             vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite);
     };
 
     // Everything in one command buffer and one submission.
-    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer& commands) {
+    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
         // 1. Each image's pixels into its top level; the coverage buffer zeroed.
         for (std::size_t i = 0; i < images.size(); ++i) {
             commands.copyBuffer(*staging.handle, *mips.handle, vk::BufferCopy{
@@ -1160,7 +1160,7 @@ std::vector<Texture> create_scene_textures(
 
         // 2. Normal maps' top levels: no spread, in alpha.
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *prepare_normals);
-        for (const MipChain& chain : chains) {
+        for (const MipChain &chain : chains) {
             if (chain.kind == MipKind::normal) {
                 const MipPushData push{.source = level_address(chain, 0), .source_size = chain.sizes[0]};
                 dispatch_mips(commands, push, chain.sizes[0].x, chain.sizes[0].y, 8, 8);
@@ -1173,12 +1173,12 @@ std::vector<Texture> create_scene_textures(
         // Textures are independent, so one barrier per level covers them all.
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *downsample);
         std::size_t most_levels = 0;
-        for (const MipChain& chain : chains) {
+        for (const MipChain &chain : chains) {
             most_levels = std::max(most_levels, chain.sizes.size());
         }
 
         for (std::size_t level = 1; level < most_levels; ++level) {
-            for (const MipChain& chain : chains) {
+            for (const MipChain &chain : chains) {
                 if (level < chain.sizes.size()) {
                     const MipPushData push{
                         .source = level_address(chain, level - 1),
@@ -1197,7 +1197,7 @@ std::vector<Texture> create_scene_textures(
         // 4. Masked base colors: count every level's alpha, work out each
         // level's scale, then apply it below the top.
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *histogram);
-        for (const MipChain& chain : chains) {
+        for (const MipChain &chain : chains) {
             for (std::size_t level = 0; chain.cutoff > 0.0f && level < chain.sizes.size(); ++level) {
                 const MipPushData push{
                     .source = level_address(chain, level),
@@ -1211,7 +1211,7 @@ std::vector<Texture> create_scene_textures(
         compute_to_compute(commands);
 
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *solve_coverage);
-        for (const MipChain& chain : chains) {
+        for (const MipChain &chain : chains) {
             if (chain.cutoff > 0.0f) {
                 const MipPushData push{
                     .source = coverage.address + chain.coverage,
@@ -1226,7 +1226,7 @@ std::vector<Texture> create_scene_textures(
         compute_to_compute(commands);
 
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *scale_alpha);
-        for (const MipChain& chain : chains) {
+        for (const MipChain &chain : chains) {
             for (std::size_t level = 1; chain.cutoff > 0.0f && level < chain.sizes.size(); ++level) {
                 const MipPushData push{
                     .source = level_address(chain, level),
@@ -1243,8 +1243,8 @@ std::vector<Texture> create_scene_textures(
 
         // 5. Every level into its image, then ready for the fragment shaders.
         for (std::size_t i = 0; i < textures.size(); ++i) {
-            const Texture& texture = textures[i];
-            const MipChain& chain = chains[i];
+            const Texture &texture = textures[i];
+            const MipChain &chain = chains[i];
 
             transition_mips(commands, *texture.handle, 0, texture.mip_levels,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
@@ -1352,7 +1352,7 @@ struct VertexOutput {
 // in `instances`, so each instance finds its draw there.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Vertex vertex = frame.vertices[vertex_id];
     const uint draw_index = frame.instances[instance];
     const DrawData draw = frame.draws[draw_index];
@@ -1584,7 +1584,7 @@ float3 offset_ray_origin(float3 position, float3 normal) {
 // materials, so the texture's heap index differs between them: that's fine,
 // since descriptor heap access is non-uniform unless the SPIR-V marks it
 // uniform, and Slang doesn't.
-float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
+float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
     const uint first = draw.first_index + triangle * 3;
     const Vertex v0 = frame.vertices[int(frame.indices[first]) + draw.vertex_offset];
     const Vertex v1 = frame.vertices[int(frame.indices[first + 1]) + draw.vertex_offset];
@@ -1610,7 +1610,7 @@ float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint t
 //   - a blended one comes back as a candidate that lets 1 - alpha of the
 //     light through, as the transparency pass's reveal sum does. It never
 //     ends the ray: the light goes on, dimmed, to whatever is behind.
-float light_visibility(FrameData* frame, float3 origin, float3 direction, float distance) {
+float light_visibility(FrameData *frame, float3 origin, float3 direction, float distance) {
     const RaytracingAccelerationStructure scene = RaytracingAccelerationStructure(frame.scene_tlas);
 
     RayDesc ray;
@@ -1652,14 +1652,14 @@ float light_visibility(FrameData* frame, float3 origin, float3 direction, float 
 // from the camera itself (acceleration.h): tlas_offset, the camera's
 // position in it, moves the camera-relative position there first, so the
 // offset grows with the coordinates the ray is really traced at.
-float3 shadow_ray_origin(FrameData* frame, float3 position, float3 face_normal, float3 l) {
+float3 shadow_ray_origin(FrameData *frame, float3 position, float3 face_normal, float3 l) {
     return offset_ray_origin(position + frame.tlas_offset, dot(face_normal, l) >= 0.0 ? face_normal : -face_normal);
 }
 
 // shade(), times how much of the light gets through. A ray is only traced
 // when the light could reach the surface at all.
 float3 shade_shadowed(
-    Surface surface, FrameData* frame, float3 position, float3 face_normal,
+    Surface surface, FrameData *frame, float3 position, float3 face_normal,
     float3 l, float3 illuminance, float distance
 ) {
     if (dot(surface.normal, l) <= 0.0 || all(illuminance == 0.0)) {
@@ -1677,7 +1677,7 @@ float3 shade_shadowed(
 // the square of the distance, then smoothly to nothing at `range`; spot
 // lights also fade from the inner cone to the outer one. A directional
 // light is infinitely far away.
-float3 punctual_light(FrameData* frame, Light light, float3 position, out float3 l, out float distance) {
+float3 punctual_light(FrameData *frame, Light light, float3 position, out float3 l, out float distance) {
     if (light.type == light_directional) {
         l = -light.direction;
         distance = infinite_distance;
@@ -1710,7 +1710,7 @@ float3 punctual_light(FrameData* frame, Light light, float3 position, out float3
 
 // The sky's irradiance on a surface facing `n`, in lux: its nine spherical
 // harmonics coefficients, each weighted by its basis function at `n`.
-float3 sky_irradiance(EnvironmentInfo* environment, float3 n) {
+float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     const float basis[9] = {
         0.282095,
         0.488603 * n.y,
@@ -1777,7 +1777,7 @@ float specular_occlusion(float n_dot_v, float visibility, float alpha) {
 //     the BRDF reflects overall (the table, as a scale and bias on F0),
 //     dimmed by the specular occlusion.
 //   - A roughness-aware Fresnel term splits the light between the two.
-float3 shade_environment(Surface surface, FrameData* frame, float roughness, float visibility, float3 irradiance_normal) {
+float3 shade_environment(Surface surface, FrameData *frame, float roughness, float visibility, float3 irradiance_normal) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
     const float3 f0 = lerp(float3(0.04), surface.base_color, surface.metallic);
     const float3 fresnel = f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(1.0 - n_dot_v, 5.0);
@@ -1812,7 +1812,7 @@ float3 shade_environment(Surface surface, FrameData* frame, float roughness, flo
 // back, in proportion to how much the surface reflects at all. Kulla and
 // Conty's (2017) idea, in Turquin's (2019) simpler scaled form, which
 // Filament uses.
-float3 energy_compensation(FrameData* frame, float3 base_color, float metallic, float roughness, float n_dot_v) {
+float3 energy_compensation(FrameData *frame, float3 base_color, float metallic, float roughness, float n_dot_v) {
     const SamplerState clamped = SamplerState.Handle(uint2(frame.clamp_sampler, 0));
     const Texture2D brdf_lut = Texture2D.Handle(uint2(frame.brdf_lut, 0));
     const float2 brdf = brdf_lut.SampleLevel(clamped, float2(n_dot_v, roughness), 0.0).rg;
@@ -1871,7 +1871,7 @@ float antialiased_alpha(float alpha, float3 geometric_normal, float map_spread) 
 // through: the aerial perspective volumes, at the point's place on the
 // screen and its distance. Closer than the first slice's far edge, a share
 // of the first slice's air.
-float3 aerial_perspective(FrameData* frame, float3 position, out float3 transmittance) {
+float3 aerial_perspective(FrameData *frame, float3 position, out float3 transmittance) {
     const float4 clip = mul(frame.view_projection, float4(position, 1.0));
     const float2 screen = clip.xy / clip.w * 0.5 + 0.5;
 
@@ -1910,7 +1910,7 @@ float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
 // surfaces the lighting pass will shade.
 [shader("fragment")]
 float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
     if (alpha_mode == alpha_mask) {
@@ -1930,7 +1930,7 @@ float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Ta
 // transparency pass adds it into its sums.
 // `front_face`: whether this triangle faces the camera.
 float4 shade_fragment(VertexOutput input, bool front_face) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
     // Base color: factor x texture x vertex color. sRGB textures are decoded

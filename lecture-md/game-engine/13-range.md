@@ -55,7 +55,7 @@ struct CellPosition {
 };
 
 // The cell `position` is in, and where in it.
-inline CellPosition to_cell(const glm::dvec3& position) {
+inline CellPosition to_cell(const glm::dvec3 &position) {
     const glm::dvec3 cell = glm::floor(position / cell_size);
     return {glm::ivec3(cell), glm::vec3(position - cell * cell_size)};
 }
@@ -63,7 +63,7 @@ inline CellPosition to_cell(const glm::dvec3& position) {
 // Where cell `cell`'s corner is, in metres from `origin`'s: exact, since the
 // cells' difference is an integer, and a multiple of cell_size is a float
 // for any difference under 2^24 cells.
-inline glm::vec3 cell_corner(const glm::ivec3& cell, const glm::ivec3& origin) {
+inline glm::vec3 cell_corner(const glm::ivec3 &cell, const glm::ivec3 &origin) {
     return glm::vec3(cell - origin) * static_cast<float>(cell_size);
 }
 ```
@@ -526,13 +526,13 @@ struct EnvironmentInfo {
 struct FrameData {
     float4x4 view_projection;          // camera-relative space -> clip space
     float4x4 inverse_view_projection;  // clip space -> camera-relative space
-    Vertex* vertices;                  // the scene's vertices
-    uint* indices;                     // the scene's indices
-    DrawData* draws;                   // one DrawData per draw
-    uint* instances;                   // the cull's visible draws: what each instance draws
-    Material* materials;               // the scene's materials
-    Light* lights;                     // the file's lights
-    EnvironmentInfo* environment;      // the sky's diffuse light and the sun
+    Vertex *vertices;                  // the scene's vertices
+    uint *indices;                     // the scene's indices
+    DrawData *draws;                   // one DrawData per draw
+    uint *instances;                   // the cull's visible draws: what each instance draws
+    Material *materials;               // the scene's materials
+    Light *lights;                     // the file's lights
+    EnvironmentInfo *environment;      // the sky's diffuse light and the sun
     uint64_t scene_tlas;               // the top-level acceleration structure's address
     int3 camera_cell;                  // the world cell the camera is in
     float exposure;                    // scene nits -> tone mapper input
@@ -561,13 +561,13 @@ static const float cell_size = 64.0;
 // to the camera. The cells are subtracted as integers, exactly; only their
 // difference, and the offsets' difference, become floats. Near the camera,
 // both are small, and keep a float's full precision anywhere in the world.
-float3 camera_relative(FrameData* frame, int3 cell, float3 offset) {
+float3 camera_relative(FrameData *frame, int3 cell, float3 offset) {
     return float3(cell - frame.camera_cell) * cell_size + (offset - frame.camera_offset);
 }
 
 // Written with vkCmdPushDataEXT before each pipeline's draws.
 struct PushData {
-    FrameData* frame;  // this frame's data
+    FrameData *frame;  // this frame's data
 };
 
 // --- Normals in two numbers ------------------------------------------------------
@@ -721,7 +721,7 @@ struct Scene {
 // samplers, lights and images, still encoded.
 // The scene is placed with its origin at `origin`, in metres from the
 // world's.
-Scene load_gltf(const std::filesystem::path& path, const glm::dvec3& origin = glm::dvec3{0.0});
+Scene load_gltf(const std::filesystem::path &path, const glm::dvec3 &origin = glm::dvec3{0.0});
 ```
 
 In `game-engine/src/scene.cpp`, add `#include "includes/cells.h"` after `#include "includes/scene.h"`.
@@ -736,7 +736,7 @@ Then replace `world_light` with:
 ```cpp
 // A KHR_lights_punctual light, placed by its node's world transform. The
 // light sits at the node's origin and shines down the node's -Z axis.
-std::optional<Light> world_light(const tinygltf::Light& source, const glm::dmat4& world) {
+std::optional<Light> world_light(const tinygltf::Light &source, const glm::dmat4 &world) {
     const glm::vec3 color = source.color.size() == 3 ? glm::vec3(glm::make_vec3(source.color.data())) : glm::vec3(1.0f);
     const CellPosition position = to_cell(glm::dvec3(world[3]));
 
@@ -777,7 +777,7 @@ Then replace `local_transform` with:
 // translation * rotation * scale. glTF stores doubles, and so do we, until
 // each draw is placed in its cell: a scene far from the origin keeps its
 // precision.
-glm::dmat4 local_transform(const tinygltf::Node& node) {
+glm::dmat4 local_transform(const tinygltf::Node &node) {
     if (node.matrix.size() == 16) {
         return glm::make_mat4(node.matrix.data());  // column-major, like glm
     }
@@ -790,7 +790,7 @@ glm::dmat4 local_transform(const tinygltf::Node& node) {
 
     if (node.rotation.size() == 4) {
         // glTF stores (x, y, z, w); glm's constructor takes w first.
-        const auto& r = node.rotation;
+        const auto &r = node.rotation;
         transform *= glm::mat4_cast(glm::dquat(r[3], r[0], r[1], r[2]));
     }
 
@@ -808,13 +808,13 @@ Then replace `visit_node` with:
 // own; every primitive of a node's mesh becomes one draw, and a node's light
 // is placed by the same transform.
 void visit_node(
-    const tinygltf::Model& model,
+    const tinygltf::Model &model,
     int node_index,
-    const glm::dmat4& parent,
-    const std::vector<std::vector<LoadedPrimitive>>& mesh_primitives,
-    Scene& scene
+    const glm::dmat4 &parent,
+    const std::vector<std::vector<LoadedPrimitive>> &mesh_primitives,
+    Scene &scene
 ) {
-    const tinygltf::Node& node = model.nodes.at(node_index);
+    const tinygltf::Node &node = model.nodes.at(node_index);
     const glm::dmat4 world = parent * local_transform(node);
 
     if (node.mesh >= 0) {
@@ -829,7 +829,7 @@ void visit_node(
         glm::dmat4 in_cell = world;
         in_cell[3] = glm::dvec4(glm::dvec3(world[3]) - corner_position, 1.0);
 
-        for (const LoadedPrimitive& primitive : mesh_primitives.at(node.mesh)) {
+        for (const LoadedPrimitive &primitive : mesh_primitives.at(node.mesh)) {
             MeshDraw draw{
                 .model = glm::mat4(in_cell),
                 .cell = placed.cell,
@@ -873,7 +873,7 @@ void visit_node(
 
 Then replace `load_gltf` with:
 ```cpp
-Scene load_gltf(const std::filesystem::path& path, const glm::dvec3& origin) {
+Scene load_gltf(const std::filesystem::path &path, const glm::dvec3 &origin) {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
     std::string error;
@@ -900,7 +900,7 @@ Scene load_gltf(const std::filesystem::path& path, const glm::dvec3& origin) {
     // geometry needs a decoder library we don't include, so refuse it clearly
     // instead of reading compressed bytes as vertices. The others change how
     // things look, not where the geometry is, and later chapters handle them.
-    for (const std::string& extension : model.extensionsRequired) {
+    for (const std::string &extension : model.extensionsRequired) {
         if (extension == "KHR_draco_mesh_compression" || extension == "KHR_meshopt_compression"
             || extension == "EXT_meshopt_compression") {
             throw std::runtime_error(path.string() + " needs " + extension + ", which this loader doesn't decode");
@@ -916,7 +916,7 @@ Scene load_gltf(const std::filesystem::path& path, const glm::dvec3& origin) {
     std::vector<std::vector<LoadedPrimitive>> mesh_primitives(model.meshes.size());
 
     for (std::size_t m = 0; m < model.meshes.size(); ++m) {
-        for (const tinygltf::Primitive& primitive : model.meshes[m].primitives) {
+        for (const tinygltf::Primitive &primitive : model.meshes[m].primitives) {
             if (const auto loaded_primitive = add_primitive(model, primitive, default_material, scene)) {
                 mesh_primitives[m].push_back(*loaded_primitive);
             }
@@ -928,7 +928,7 @@ Scene load_gltf(const std::filesystem::path& path, const glm::dvec3& origin) {
         throw std::runtime_error(path.string() + " has no scenes");
     }
 
-    const tinygltf::Scene& root = model.scenes.at(model.defaultScene >= 0 ? model.defaultScene : 0);
+    const tinygltf::Scene &root = model.scenes.at(model.defaultScene >= 0 ? model.defaultScene : 0);
 
     for (const int node : root.nodes) {
         visit_node(model, node, glm::translate(glm::dmat4{1.0}, origin), mesh_primitives, scene);
@@ -1010,7 +1010,7 @@ struct FlyCamera {
 
 // Moves and turns `camera` from `input` and the keyboard, `seconds` after
 // the last update.
-void update_camera(FlyCamera& camera, const CameraInput& input, float seconds);
+void update_camera(FlyCamera &camera, const CameraInput &input, float seconds);
 ```
 
 `game-engine/src/camera.cpp`:
@@ -1073,7 +1073,7 @@ glm::mat4 FlyCamera::projection(float aspect) const {
 
 // --- Controls ----------------------------------------------------------------
 
-void update_camera(FlyCamera& camera, const CameraInput& input, float seconds) {
+void update_camera(FlyCamera &camera, const CameraInput &input, float seconds) {
     const glm::vec3 forward = camera.forward();
     const glm::vec3 right = glm::normalize(glm::cross(forward, world_up));
 
@@ -1093,7 +1093,7 @@ void update_camera(FlyCamera& camera, const CameraInput& input, float seconds) {
         camera.speed = std::clamp(camera.speed * std::pow(speed_step, input.wheel), min_speed, max_speed);
 
         // Fly: SDL keeps the current up/down state of every key.
-        const bool* keys = SDL_GetKeyboardState(nullptr);
+        const bool *keys = SDL_GetKeyboardState(nullptr);
 
         glm::vec3 direction{0.0f};
         if (keys[SDL_SCANCODE_W]) direction += forward;
@@ -1189,26 +1189,26 @@ struct AccelerationStructures {
 // straight from the scene's vertex and index buffers, which must have been
 // created with eAccelerationStructureBuildInputReadOnlyKHR.
 AccelerationStructures build_acceleration_structures(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const Scene& scene,
-    const Buffer& vertex_buffer,
-    const Buffer& index_buffer,
-    const glm::ivec3& origin_cell
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const Scene &scene,
+    const Buffer &vertex_buffer,
+    const Buffer &index_buffer,
+    const glm::ivec3 &origin_cell
 );
 
 // Builds the TLAS again, around `origin_cell`, and waits for it. The old one
 // is destroyed, so the GPU must not be using it.
 void build_tlas(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    AccelerationStructures& structures,
-    const Scene& scene,
-    const glm::ivec3& origin_cell
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    AccelerationStructures &structures,
+    const Scene &scene,
+    const glm::ivec3 &origin_cell
 );
 ```
 
@@ -1234,7 +1234,7 @@ vk::DeviceSize align_up(vk::DeviceSize value, vk::DeviceSize alignment) {
 constexpr vk::DeviceSize storage_alignment = 256;
 
 // What the GPU requires a build's scratch address to be a multiple of.
-vk::DeviceSize scratch_alignment(const GpuChoice& gpu) {
+vk::DeviceSize scratch_alignment(const GpuChoice &gpu) {
     const auto properties = gpu.device.getProperties2<
         vk::PhysicalDeviceProperties2,
         vk::PhysicalDeviceAccelerationStructurePropertiesKHR
@@ -1243,7 +1243,7 @@ vk::DeviceSize scratch_alignment(const GpuChoice& gpu) {
 }
 
 // A buffer acceleration structures are stored in.
-Buffer create_storage(const vk::raii::Device& device, const GpuChoice& gpu, vk::DeviceSize size) {
+Buffer create_storage(const vk::raii::Device &device, const GpuChoice &gpu, vk::DeviceSize size) {
     return create_buffer(device, gpu, size,
         vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -1252,7 +1252,7 @@ Buffer create_storage(const vk::raii::Device& device, const GpuChoice& gpu, vk::
 // Scratch memory: working space for a build, needed only while it runs. Its
 // address must be a multiple of `alignment`, so the buffer is a little
 // larger and the returned address rounded up within it.
-Buffer create_scratch(const vk::raii::Device& device, const GpuChoice& gpu, vk::DeviceSize size, vk::DeviceSize alignment) {
+Buffer create_scratch(const vk::raii::Device &device, const GpuChoice &gpu, vk::DeviceSize size, vk::DeviceSize alignment) {
     return create_buffer(device, gpu, size + alignment,
         vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -1261,7 +1261,7 @@ Buffer create_scratch(const vk::raii::Device& device, const GpuChoice& gpu, vk::
 // Vulkan wants an instance's transform as a 3x4 matrix of rows; glm stores
 // 4x4 matrices by columns, so element (row, column) is model[column][row].
 // The bottom row of a model matrix is always (0, 0, 0, 1) and is left out.
-vk::TransformMatrixKHR to_transform(const glm::mat4& model) {
+vk::TransformMatrixKHR to_transform(const glm::mat4 &model) {
     vk::TransformMatrixKHR transform{};
 
     for (int row = 0; row < 3; ++row) {
@@ -1278,14 +1278,14 @@ vk::TransformMatrixKHR to_transform(const glm::mat4& model) {
 // --- Building ----------------------------------------------------------------
 
 AccelerationStructures build_acceleration_structures(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const Scene& scene,
-    const Buffer& vertex_buffer,
-    const Buffer& index_buffer,
-    const glm::ivec3& origin_cell
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const Scene &scene,
+    const Buffer &vertex_buffer,
+    const Buffer &index_buffer,
+    const glm::ivec3 &origin_cell
 ) {
     const vk::DeviceSize alignment = scratch_alignment(gpu);
 
@@ -1308,7 +1308,7 @@ AccelerationStructures build_acceleration_structures(
     vk::DeviceSize scratch_size = 0;
 
     for (std::size_t i = 0; i < count; ++i) {
-        const Primitive& primitive = scene.primitives[i];
+        const Primitive &primitive = scene.primitives[i];
 
         // The highest vertex an index refers to, which the build must know.
         const auto first = scene.indices.begin() + primitive.first_index;
@@ -1382,11 +1382,11 @@ AccelerationStructures build_acceleration_structures(
     // Every BLAS in one call. The barrier makes them visible to the TLAS
     // build, which reads them: here, and whenever the TLAS is rebuilt.
     std::vector<const vk::AccelerationStructureBuildRangeInfoKHR*> range_pointers;
-    for (const auto& range : ranges) {
+    for (const auto &range : ranges) {
         range_pointers.push_back(&range);
     }
 
-    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer& commands) {
+    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
         commands.buildAccelerationStructuresKHR(builds, range_pointers);
 
         const vk::MemoryBarrier2 blases_built{
@@ -1406,13 +1406,13 @@ AccelerationStructures build_acceleration_structures(
 // --- The TLAS ------------------------------------------------------------------
 
 void build_tlas(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    AccelerationStructures& structures,
-    const Scene& scene,
-    const glm::ivec3& origin_cell
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    AccelerationStructures &structures,
+    const Scene &scene,
+    const glm::ivec3 &origin_cell
 ) {
     // An instance places a BLAS in the TLAS's space: the draw's model matrix,
     // moved from its cell's corner to the origin cell's. Its custom index is
@@ -1421,7 +1421,7 @@ void build_tlas(
     std::vector<vk::AccelerationStructureInstanceKHR> instances;
 
     for (std::uint32_t i = 0; i < scene.draws.size(); ++i) {
-        const MeshDraw& draw = scene.draws[i];
+        const MeshDraw &draw = scene.draws[i];
 
         glm::mat4 model = draw.model;
         model[3] += glm::vec4(cell_corner(draw.cell, origin_cell), 0.0f);
@@ -1476,9 +1476,9 @@ void build_tlas(
     tlas_build.scratchData.deviceAddress = align_up(tlas_scratch.address, alignment);
 
     // The barrier makes the TLAS visible to fragment shaders' ray queries.
-    const vk::AccelerationStructureBuildRangeInfoKHR* tlas_range_pointer = &tlas_range;
+    const vk::AccelerationStructureBuildRangeInfoKHR *tlas_range_pointer = &tlas_range;
 
-    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer& commands) {
+    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
         commands.buildAccelerationStructuresKHR(tlas_build, tlas_range_pointer);
 
         const vk::MemoryBarrier2 tlas_built{
@@ -1504,10 +1504,10 @@ void build_tlas(
 In `game-engine/src/buffer.cpp`, replace `upload_buffer` with:
 ```cpp
 Buffer upload_buffer(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
     std::span<const std::byte> bytes,
     vk::BufferUsageFlags usage
 ) {
@@ -1518,7 +1518,7 @@ Buffer upload_buffer(
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void* mapped = staging.memory.mapMemory(0, bytes.size());
+    void *mapped = staging.memory.mapMemory(0, bytes.size());
     std::memcpy(mapped, bytes.data(), bytes.size());
     staging.memory.unmapMemory();
 
@@ -1527,7 +1527,7 @@ Buffer upload_buffer(
         usage | vk::BufferUsageFlagBits::eTransferDst,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer& commands) {
+    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
         commands.copyBuffer(*staging.handle, *buffer.handle, vk::BufferCopy{.size = bytes.size()});
 
         // Whatever reads the buffer later, in this submission or any after
@@ -1624,7 +1624,7 @@ struct VertexOutput {
 // in `instances`, so each instance finds its draw there.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Vertex vertex = frame.vertices[vertex_id];
     const uint draw_index = frame.instances[instance];
     const DrawData draw = frame.draws[draw_index];
@@ -1848,7 +1848,7 @@ float3 offset_ray_origin(float3 position, float3 normal) {
 // materials, so the texture's heap index differs between them: that's fine,
 // since descriptor heap access is non-uniform unless the SPIR-V marks it
 // uniform, and Slang doesn't.
-float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
+float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
     const uint first = draw.first_index + triangle * 3;
     const Vertex v0 = frame.vertices[int(frame.indices[first]) + draw.vertex_offset];
     const Vertex v1 = frame.vertices[int(frame.indices[first + 1]) + draw.vertex_offset];
@@ -1874,7 +1874,7 @@ float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint t
 //   - a blended one comes back as a candidate that lets 1 - alpha of the
 //     light through, as the transparency pass's reveal sum does. It never
 //     ends the ray: the light goes on, dimmed, to whatever is behind.
-float light_visibility(FrameData* frame, float3 origin, float3 direction, float distance) {
+float light_visibility(FrameData *frame, float3 origin, float3 direction, float distance) {
     const RaytracingAccelerationStructure scene = RaytracingAccelerationStructure(frame.scene_tlas);
 
     RayDesc ray;
@@ -1916,14 +1916,14 @@ float light_visibility(FrameData* frame, float3 origin, float3 direction, float 
 // from the camera itself (acceleration.h): tlas_offset, the camera's
 // position in it, moves the camera-relative position there first, so the
 // offset grows with the coordinates the ray is really traced at.
-float3 shadow_ray_origin(FrameData* frame, float3 position, float3 face_normal, float3 l) {
+float3 shadow_ray_origin(FrameData *frame, float3 position, float3 face_normal, float3 l) {
     return offset_ray_origin(position + frame.tlas_offset, dot(face_normal, l) >= 0.0 ? face_normal : -face_normal);
 }
 
 // shade(), times how much of the light gets through. A ray is only traced
 // when the light could reach the surface at all.
 float3 shade_shadowed(
-    Surface surface, FrameData* frame, float3 position, float3 face_normal,
+    Surface surface, FrameData *frame, float3 position, float3 face_normal,
     float3 l, float3 illuminance, float distance
 ) {
     if (dot(surface.normal, l) <= 0.0 || all(illuminance == 0.0)) {
@@ -1941,7 +1941,7 @@ float3 shade_shadowed(
 // the square of the distance, then smoothly to nothing at `range`; spot
 // lights also fade from the inner cone to the outer one. A directional
 // light is infinitely far away.
-float3 punctual_light(FrameData* frame, Light light, float3 position, out float3 l, out float distance) {
+float3 punctual_light(FrameData *frame, Light light, float3 position, out float3 l, out float distance) {
     if (light.type == light_directional) {
         l = -light.direction;
         distance = infinite_distance;
@@ -1974,7 +1974,7 @@ float3 punctual_light(FrameData* frame, Light light, float3 position, out float3
 
 // The sky's irradiance on a surface facing `n`, in lux: its nine spherical
 // harmonics coefficients, each weighted by its basis function at `n`.
-float3 sky_irradiance(EnvironmentInfo* environment, float3 n) {
+float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     const float basis[9] = {
         0.282095,
         0.488603 * n.y,
@@ -2041,7 +2041,7 @@ float specular_occlusion(float n_dot_v, float visibility, float alpha) {
 //     the BRDF reflects overall (the table, as a scale and bias on F0),
 //     dimmed by the specular occlusion.
 //   - A roughness-aware Fresnel term splits the light between the two.
-float3 shade_environment(Surface surface, FrameData* frame, float roughness, float visibility, float3 irradiance_normal) {
+float3 shade_environment(Surface surface, FrameData *frame, float roughness, float visibility, float3 irradiance_normal) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
     const float3 f0 = lerp(float3(0.04), surface.base_color, surface.metallic);
     const float3 fresnel = f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(1.0 - n_dot_v, 5.0);
@@ -2087,7 +2087,7 @@ float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
 // surfaces the lighting pass will shade.
 [shader("fragment")]
 float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
     if (alpha_mode == alpha_mask) {
@@ -2107,7 +2107,7 @@ float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Ta
 // transparency pass adds it into its sums.
 // `front_face`: whether this triangle faces the camera.
 float4 shade_fragment(VertexOutput input, bool front_face) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
     // Base color: factor x texture x vertex color. sRGB textures are decoded
@@ -2306,7 +2306,7 @@ TransparentOutput transparentMain(VertexOutput input, bool front_face : SV_IsFro
 // --- Data shared with C++ (src/includes/shader_types.h) ----------------------
 
 struct AoPushData {
-    FrameData* frame;
+    FrameData *frame;
     uint depth;       // the depth buffer, full resolution
     uint normals;     // the prepass's normals, full resolution
     uint ao_depth;    // half resolution: distance in front of the camera
@@ -2335,7 +2335,7 @@ static const float half_pi = 1.57079633;
 // The camera-relative position of the surface at full-resolution pixel
 // position `pixel` with depth `depth`: its clip-space coordinates, back
 // through the inverse view-projection, divided by w.
-float3 unproject(FrameData* frame, float2 pixel, float depth) {
+float3 unproject(FrameData *frame, float2 pixel, float depth) {
     const float2 ndc = pixel / float2(push.width, push.height) * 2.0 - 1.0;
     const float4 position = mul(frame.inverse_view_projection, float4(ndc, depth, 1.0));
     return position.xyz / position.w;
@@ -2343,7 +2343,7 @@ float3 unproject(FrameData* frame, float2 pixel, float depth) {
 
 // Where a camera-relative position lands on screen, in full-resolution
 // pixels.
-float2 to_pixels(FrameData* frame, float3 position) {
+float2 to_pixels(FrameData *frame, float3 position) {
     const float4 clip = mul(frame.view_projection, float4(position, 1.0));
     return (clip.xy / clip.w * 0.5 + 0.5) * float2(push.width, push.height);
 }
@@ -2352,7 +2352,7 @@ float2 to_pixels(FrameData* frame, float3 position) {
 // Both this and view_ray unproject at the near plane, depth 1: with no far
 // plane, depth 0 is infinitely far, and positions are already measured from
 // the camera, so nothing is taken off them to lose digits.
-float3 camera_forward(FrameData* frame) {
+float3 camera_forward(FrameData *frame) {
     return normalize(unproject(frame, float2(push.width, push.height) * 0.5, 1.0));
 }
 
@@ -2361,7 +2361,7 @@ float3 camera_forward(FrameData* frame) {
 // distance d in front of the camera, along the ray, is at ray x d. Rays
 // through the pixels of one row or column change by the same amount from
 // pixel to pixel, so a few rays give all the others by adding.
-float3 view_ray(FrameData* frame, float2 pixel, float3 forward) {
+float3 view_ray(FrameData *frame, float2 pixel, float3 forward) {
     const float3 near_point = unproject(frame, pixel, 1.0);
     return near_point / dot(near_point, forward);
 }
@@ -2390,7 +2390,7 @@ void prefilterMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
     const Texture2D normals = Texture2D.Handle(uint2(push.normals, 0));
     RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
@@ -2483,7 +2483,7 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const int2 pixel = int2(id.xy);
     RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
     RWTexture2D<float2> ao_normals = RWTexture2D<float2>.Handle(uint2(push.ao_normals, 0));
@@ -2716,7 +2716,7 @@ void upsampleMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const int2 pixel = int2(id.xy);
     const int2 size = int2(half_size());
     const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
@@ -2818,23 +2818,23 @@ struct DrawListRange {
 };
 
 struct CullTables {
-    uint* order;            // draw indices, in the cull's order
-    DrawGroup* groups;
-    DrawListRange* lists;
-    uint* visible;          // per position in the order
-    uint* draw_slots;       // prefix sums of visible, then their total
-    uint* group_flags;      // per group
-    uint* group_slots;      // prefix sums of group_flags, then their total
-    uint* instances;        // the visible draws' indices
-    DrawCommand* commands;  // per group
-    uint* counts;           // per list
+    uint *order;            // draw indices, in the cull's order
+    DrawGroup *groups;
+    DrawListRange *lists;
+    uint *visible;          // per position in the order
+    uint *draw_slots;       // prefix sums of visible, then their total
+    uint *group_flags;      // per group
+    uint *group_slots;      // prefix sums of group_flags, then their total
+    uint *instances;        // the visible draws' indices
+    DrawCommand *commands;  // per group
+    uint *counts;           // per list
     uint draw_count;
     uint group_count;
 };
 
 struct CullPushData {
-    FrameData* frame;
-    CullTables* tables;
+    FrameData *frame;
+    CullTables *tables;
 };
 
 [[vk::push_constant]]
@@ -2893,7 +2893,7 @@ bool in_view(float4x4 view_projection, float3 lo, float3 hi) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cullMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint position = id.x;
 
     if (position >= tables.draw_count) {
@@ -2901,7 +2901,7 @@ void cullMain(uint3 id : SV_DispatchThreadID) {
     }
 
     // The draw's box, from its cell to the camera: both corners in the same cell.
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const DrawData draw = frame.draws[tables.order[position]];
     const float3 lo = camera_relative(frame, draw.cell, draw.bounds_min);
     const float3 hi = camera_relative(frame, draw.cell, draw.bounds_max);
@@ -2927,7 +2927,7 @@ static const uint scan_size = 256;
 groupshared uint scan_numbers[scan_size];
 groupshared uint scan_carry;
 
-void exclusive_scan(uint* input, uint* output, uint count, uint thread) {
+void exclusive_scan(uint *input, uint *output, uint count, uint thread) {
     if (thread == 0) {
         scan_carry = 0;
     }
@@ -2967,14 +2967,14 @@ void exclusive_scan(uint* input, uint* output, uint count, uint thread) {
 [shader("compute")]
 [numthreads(scan_size, 1, 1)]
 void scanDrawsMain(uint3 id : SV_GroupThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     exclusive_scan(tables.visible, tables.draw_slots, tables.draw_count, id.x);
 }
 
 [shader("compute")]
 [numthreads(scan_size, 1, 1)]
 void scanGroupsMain(uint3 id : SV_GroupThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     exclusive_scan(tables.group_flags, tables.group_slots, tables.group_count, id.x);
 }
 
@@ -2982,14 +2982,14 @@ void scanGroupsMain(uint3 id : SV_GroupThreadID) {
 
 // A group's draws are a run of the order, so its visible draws are a run of
 // the instances, from draw_slots[first] to draw_slots[first + count].
-uint visible_in_group(CullTables* tables, DrawGroup group) {
+uint visible_in_group(CullTables *tables, DrawGroup group) {
     return tables.draw_slots[group.first + group.count] - tables.draw_slots[group.first];
 }
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void markGroupsMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
 
     if (id.x >= tables.group_count) {
         return;
@@ -3003,7 +3003,7 @@ void markGroupsMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void writeInstancesMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint position = id.x;
 
     if (position >= tables.draw_count || tables.visible[position] == 0) {
@@ -3021,7 +3021,7 @@ void writeInstancesMain(uint3 id : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void writeCommandsMain(uint3 id : SV_DispatchThreadID) {
-    CullTables* tables = push.tables;
+    CullTables *tables = push.tables;
     const uint group_index = id.x;
 
     if (group_index >= tables.group_count) {
@@ -3092,7 +3092,7 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
 // is infinitely far, and w there is 0.
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
 
     const float4 near_point = mul(frame.inverse_view_projection, float4(input.clip, 1.0, 1.0));
     const float3 direction = normalize(near_point.xyz / near_point.w);
@@ -3145,7 +3145,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
 #include <vector>
 
 // A .spv file as the 32-bit words SPIR-V is made of.
-std::vector<std::uint32_t> read_spirv(const std::filesystem::path& path);
+std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path);
 
 // The passes the scene is drawn in, and the images each draws into.
 enum class MeshPass {
@@ -3160,7 +3160,7 @@ enum class MeshPass {
 // shaders find their resources in the descriptor heap. Cull mode and front
 // face are set per draw.
 vk::raii::Pipeline create_mesh_pipeline(
-    const vk::raii::Device& device,
+    const vk::raii::Device &device,
     std::span<const vk::Format> color_formats,
     vk::Format depth_format,
     AlphaMode alpha_mode,
@@ -3181,21 +3181,21 @@ enum class ColorBlend {
 // far, without writing depth, so it only reaches pixels nothing else has
 // been drawn on: that's how the sky goes behind the scene.
 vk::raii::Pipeline create_fullscreen_pipeline(
-    const vk::raii::Device& device,
-    const char* shader,
+    const vk::raii::Device &device,
+    const char *shader,
     vk::Format color_format,
     vk::Format depth_format = vk::Format::eUndefined,
     ColorBlend blend = ColorBlend::replace
 );
 
 // A compute pipeline running `entry_point` from shaders/<shader>.spv.
-vk::raii::Pipeline create_compute_pipeline(const vk::raii::Device& device, const char* shader, const char* entry_point);
+vk::raii::Pipeline create_compute_pipeline(const vk::raii::Device &device, const char *shader, const char *entry_point);
 ```
 
 In `game-engine/src/pipeline.cpp`, replace `create_mesh_pipeline` with:
 ```cpp
 vk::raii::Pipeline create_mesh_pipeline(
-    const vk::raii::Device& device,
+    const vk::raii::Device &device,
     std::span<const vk::Format> color_formats,
     vk::Format depth_format,
     AlphaMode alpha_mode,
@@ -3440,9 +3440,9 @@ struct Frame {
     vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
     vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     Buffer data;                                   // one FrameData, host-visible
-    FrameData* mapped = nullptr;                   // `data`, mapped for the CPU to write
+    FrameData *mapped = nullptr;                   // `data`, mapped for the CPU to write
     Buffer cull_totals;                            // the cull's totals, copied out, host-visible
-    const CullTotals* totals = nullptr;            // `cull_totals`, mapped for the CPU to read
+    const CullTotals *totals = nullptr;            // `cull_totals`, mapped for the CPU to read
 };
 
 // --- Recording a frame -------------------------------------------------------
@@ -3450,7 +3450,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -3539,11 +3539,11 @@ struct DrawList {
 // says where the frame's data is; each instance finds its DrawData through
 // the cull's instances.
 void draw_mode(
-    const vk::raii::CommandBuffer& commands,
-    const DrawCulling& culling,
-    const DrawList& draws,
+    const vk::raii::CommandBuffer &commands,
+    const DrawCulling &culling,
+    const DrawList &draws,
     AlphaMode mode,
-    const vk::raii::Pipeline& pipeline
+    const vk::raii::Pipeline &pipeline
 ) {
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
@@ -3573,7 +3573,7 @@ void draw_mode(
 
 // The viewport and scissor every pass uses: the whole image. The pipelines
 // leave both dynamic.
-void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) {
+void set_viewport(const vk::raii::CommandBuffer &commands, vk::Extent2D extent) {
     commands.setViewport(0, vk::Viewport{
         .x = 0.0f,
         .y = 0.0f,
@@ -3596,14 +3596,14 @@ void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) 
 //   5. tone mapping, from the HDR image into the swapchain image, which is
 //      then ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
-    const ScenePipelines& pipelines,
-    const AmbientOcclusion& ambient_occlusion,
-    const DrawCulling& culling,
-    const DescriptorHeaps& heaps,
-    const DrawList& draws
+    const ScenePipelines &pipelines,
+    const AmbientOcclusion &ambient_occlusion,
+    const DrawCulling &culling,
+    const DescriptorHeaps &heaps,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
     const vk::Image hdr = *swapchain.hdr.handle;
@@ -3936,7 +3936,7 @@ constexpr std::array view_names{
 //   - =   exposure, half a stop darker or brighter: like a camera's
 //         exposure compensation, + is brighter
 // Holding a key repeats it.
-bool poll_events(SDL_Window* window, CameraInput& input, Settings& settings) {
+bool poll_events(SDL_Window *window, CameraInput &input, Settings &settings) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -4086,18 +4086,18 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             // Host-coherent: the CPU's writes reach the GPU without a flush.
             Buffer data = create_buffer(device, *gpu, sizeof(FrameData),
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
+            auto *mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
 
             // Starts zeroed: the first wait on each frame reads it before
             // the GPU has written it.
             Buffer cull_totals = create_buffer(device, *gpu, sizeof(CullTotals), vk::BufferUsageFlagBits::eTransferDst,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* totals = static_cast<CullTotals*>(cull_totals.memory.mapMemory(0, sizeof(CullTotals)));
+            auto *totals = static_cast<CullTotals*>(cull_totals.memory.mapMemory(0, sizeof(CullTotals)));
             *totals = CullTotals{.visible_draws = 0, .commands = 0};
 
             frames.push_back(Frame{
@@ -4136,9 +4136,9 @@ int main() {
         std::vector<CullDraw> cull_draws;
         std::array<std::size_t, 3> mode_draws{};  // how many draws of each alpha mode
 
-        for (const MeshDraw& draw : scene.draws) {
-            const Primitive& primitive = scene.primitives[draw.primitive];
-            const SceneMaterial& material = scene.materials[primitive.material];
+        for (const MeshDraw &draw : scene.draws) {
+            const Primitive &primitive = scene.primitives[draw.primitive];
+            const SceneMaterial &material = scene.materials[primitive.material];
             const std::uint32_t list = draw_list_index(material.alpha_mode, material.double_sided, draw.mirrored);
 
             draw_data.push_back(DrawData{
@@ -4228,7 +4228,7 @@ int main() {
         // The swapchain's images are recreated with it, so their descriptors
         // are rewritten every time: after this, only while the GPU is idle.
         const auto describe_screen = [&] {
-            const auto whole = [](const Image& image, vk::ImageAspectFlags aspect) {
+            const auto whole = [](const Image &image, vk::ImageAspectFlags aspect) {
                 return vk::ImageViewCreateInfo{
                     .image = *image.handle,
                     .viewType = vk::ImageViewType::e2D,
@@ -4276,7 +4276,7 @@ int main() {
         // Heap indices are one past the scene's: image i is texture i + 1 and
         // sampler i is sampler i + 1, so "none" (-1) becomes 0, the white
         // texture or the default sampler.
-        const auto slot = [](const TextureRef& ref) {
+        const auto slot = [](const TextureRef &ref) {
             return TextureSlot{
                 .texture = static_cast<std::uint32_t>(ref.image + 1),
                 .sampler = static_cast<std::uint32_t>(ref.sampler + 1),
@@ -4286,7 +4286,7 @@ int main() {
 
         std::vector<Material> materials;
 
-        for (const SceneMaterial& material : scene.materials) {
+        for (const SceneMaterial &material : scene.materials) {
             materials.push_back(Material{
                 .base_color_factor = material.base_color_factor,
                 .emissive_factor = material.emissive_factor,
@@ -4374,7 +4374,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer and
             //    data from last time, then write this frame's data.
@@ -4516,7 +4516,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

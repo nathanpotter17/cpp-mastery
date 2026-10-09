@@ -187,7 +187,7 @@ inline constexpr std::array operations{
 };
 
 // The projection &Operation::symbol makes find compare each element's symbol.
-constexpr const Operation* find_operation(char symbol) {
+constexpr const Operation *find_operation(char symbol) {
     const auto found = std::ranges::find(operations, static_cast<Symbol>(symbol), &Operation::symbol);
     return found == operations.end() ? nullptr : &*found;
 }
@@ -229,7 +229,7 @@ Expressions arrive as text, so we need to turn `"-7 * 6"` into two numbers and a
 // "lhs op rhs", with the operator already looked up in the table.
 struct Expression {
     i32 lhs = 0;
-    const Operation* operation = nullptr;
+    const Operation *operation = nullptr;
     i32 rhs = 0;
 
     Result evaluate() const {
@@ -247,7 +247,7 @@ inline std::string_view skip_spaces(std::string_view text) {
 
 // Reads an i32 from the front of text, and removes it from text.
 // from_chars doesn't throw or allocate; it reports where it stopped and why.
-inline std::optional<i32> take_number(std::string_view& text) {
+inline std::optional<i32> take_number(std::string_view &text) {
     text = skip_spaces(text);
 
     i32 value = 0;
@@ -279,7 +279,7 @@ inline std::optional<Expression> parse(std::string_view text) {
         return std::nullopt;
     }
 
-    const Operation* operation = find_operation(text.front());
+    const Operation *operation = find_operation(text.front());
     if (!operation) {
         return std::nullopt;
     }
@@ -352,7 +352,7 @@ struct Summary {
 // Accepts any range of integers: a vector, an array, or a view over either.
 template <std::ranges::input_range R>
     requires std::integral<std::ranges::range_value_t<R>>
-auto summarize(R&& values) {
+auto summarize(R &&values) {
     // range_value_t is an alias template: the element type of R.
     using T = std::ranges::range_value_t<R>;
 
@@ -405,13 +405,13 @@ Running a batch is always the same loop: parse each input, then evaluate it. Wha
 // Called once per input with what parse and evaluate made of it. A
 // std::function holds any callable with this signature: a function, or a
 // lambda that captures variables, which a plain function pointer can't hold.
-using RowHandler = std::function<void(std::string_view input, const std::optional<Expression>& expression, Result value)>;
+using RowHandler = std::function<void(std::string_view input, const std::optional<Expression> &expression, Result value)>;
 
 // --- Running a batch ---------------------------------------------------------
 
 // Parses and evaluates every input, and leaves what to do with the results to
 // the caller's handler.
-inline void run_batch(std::span<const std::string_view> inputs, const RowHandler& handle) {
+inline void run_batch(std::span<const std::string_view> inputs, const RowHandler &handle) {
     for (const std::string_view input : inputs) {
         const std::optional<Expression> expression = parse(input);
         const Result value = expression ? expression->evaluate() : Result{};
@@ -506,7 +506,7 @@ void print_types() {
 
     // An enum class has no formatter, so we print its underlying char.
     std::print("operations:");
-    for (const Operation& operation : operations) {
+    for (const Operation &operation : operations) {
         std::print(" {} {}", std::to_underlying(operation.symbol), operation.name);
     }
     std::println();
@@ -546,7 +546,7 @@ int main() {
 
     // The lambda captures results and uses by reference ([&]), so it can
     // fill them in. That capture is why it needs a std::function.
-    run_batch(inputs, [&](std::string_view input, const std::optional<Expression>& expression, Result value) {
+    run_batch(inputs, [&](std::string_view input, const std::optional<Expression> &expression, Result value) {
         if (!expression) {
             std::println("{:<20?} {:>12}", input, "bad input");
             return;
@@ -568,12 +568,12 @@ int main() {
 
     // --- The summary ---------------------------------------------------------
 
-    const auto failed = std::ranges::count_if(results, [](const Result& result) { return !result; });
+    const auto failed = std::ranges::count_if(results, [](const Result &result) { return !result; });
 
     // A lazy view: nothing is filtered or copied until something reads it.
     auto values = results
-        | std::views::filter([](const Result& result) { return result.has_value(); })
-        | std::views::transform([](const Result& result) { return *result; });
+        | std::views::filter([](const Result &result) { return result.has_value(); })
+        | std::views::transform([](const Result &result) { return *result; });
 
     const auto summary = summarize(values);
     static_assert(std::is_same_v<decltype(summary)::total_type, i64>);

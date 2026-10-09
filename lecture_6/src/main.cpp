@@ -23,14 +23,14 @@ int main() {
 
     try {
         swatches = nlohmann::json::parse(config).at("swatches").get<std::vector<Swatch>>();
-    } catch (const nlohmann::json::exception& e) {
+    } catch (const nlohmann::json::exception &e) {
         std::println(stderr, "Bad config: {}", e.what());
         return EXIT_FAILURE;
     }
 
     auto report = nlohmann::json::array();
 
-    for (const Swatch& swatch : swatches) {
+    for (const Swatch &swatch : swatches) {
         const Image image = make_gradient(swatch.width, swatch.height, swatch.from, swatch.to);
 
         auto png = encode_png(image);
@@ -55,6 +55,6 @@ int main() {
 
     std::println("{}", report.dump(2));
 
-    const bool all_ok = std::ranges::all_of(report, [](const auto& entry) { return entry["round_trip"].template get<bool>(); });
+    const bool all_ok = std::ranges::all_of(report, [](const auto &entry) { return entry["round_trip"].template get<bool>(); });
     return all_ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -41,7 +41,7 @@ Ray tracing isn't part of core Vulkan. It comes in extensions, which the GPU mus
 
 namespace {
 
-constexpr const char* validation_layer = "VK_LAYER_KHRONOS_validation";
+constexpr const char *validation_layer = "VK_LAYER_KHRONOS_validation";
 
 // --- What the renderer needs from a GPU --------------------------------------
 
@@ -76,7 +76,7 @@ using Features = vk::StructureChain<
 VKAPI_ATTR vk::Bool32 VKAPI_CALL on_validation_message(
     vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
     vk::DebugUtilsMessageTypeFlagsEXT /*types*/,
-    const vk::DebugUtilsMessengerCallbackDataEXT* data,
+    const vk::DebugUtilsMessengerCallbackDataEXT *data,
     void* /*user_data*/
 ) {
     std::println(stderr, "[validation {}] {}", vk::to_string(severity), data->pMessage);
@@ -92,11 +92,11 @@ int rank(vk::PhysicalDeviceType type) {
     }
 }
 
-bool has_extensions(const vk::raii::PhysicalDevice& device) {
+bool has_extensions(const vk::raii::PhysicalDevice &device) {
     const std::vector<vk::ExtensionProperties> available = device.enumerateDeviceExtensionProperties();
 
     return std::ranges::all_of(device_extensions, [&](std::string_view name) {
-        return std::ranges::any_of(available, [&](const vk::ExtensionProperties& extension) {
+        return std::ranges::any_of(available, [&](const vk::ExtensionProperties &extension) {
             return name == extension.extensionName.data();
         });
     });
@@ -104,7 +104,7 @@ bool has_extensions(const vk::raii::PhysicalDevice& device) {
 
 // Only valid once has_extensions() is true: the extension structs in the
 // chain may not be queried on a device that lacks their extension.
-bool has_features(const vk::raii::PhysicalDevice& device) {
+bool has_features(const vk::raii::PhysicalDevice &device) {
     const Features supported = device.getFeatures2<
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan12Features,
@@ -115,9 +115,9 @@ bool has_features(const vk::raii::PhysicalDevice& device) {
         vk::PhysicalDeviceRayQueryFeaturesKHR
     >();
 
-    const auto& vulkan10 = supported.get<vk::PhysicalDeviceFeatures2>().features;
-    const auto& vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
-    const auto& vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
+    const auto &vulkan10 = supported.get<vk::PhysicalDeviceFeatures2>().features;
+    const auto &vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
+    const auto &vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
 
     return vulkan10.independentBlend
         && vulkan10.samplerAnisotropy
@@ -137,15 +137,15 @@ bool has_features(const vk::raii::PhysicalDevice& device) {
 
 // --- Instance ----------------------------------------------------------------
 
-bool validation_layer_available(const vk::raii::Context& context) {
-    return std::ranges::any_of(context.enumerateInstanceLayerProperties(), [](const vk::LayerProperties& layer) {
+bool validation_layer_available(const vk::raii::Context &context) {
+    return std::ranges::any_of(context.enumerateInstanceLayerProperties(), [](const vk::LayerProperties &layer) {
         return std::string_view(layer.layerName.data()) == validation_layer;
     });
 }
 
 vk::raii::Instance create_instance(
-    const vk::raii::Context& context,
-    std::span<const char* const> extensions,
+    const vk::raii::Context &context,
+    std::span<const char *const> extensions,
     bool validation
 ) {
     std::vector<const char*> enabled_extensions(extensions.begin(), extensions.end());
@@ -177,7 +177,7 @@ vk::raii::Instance create_instance(
     return vk::raii::Instance(context, create_info);
 }
 
-vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance& instance) {
+vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance &instance) {
     using Severity = vk::DebugUtilsMessageSeverityFlagBitsEXT;
     using Type = vk::DebugUtilsMessageTypeFlagBitsEXT;
 
@@ -190,7 +190,7 @@ vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance
     return vk::raii::DebugUtilsMessengerEXT(instance, create_info);
 }
 
-vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, SDL_Window* window) {
+vk::raii::SurfaceKHR create_surface(const vk::raii::Instance &instance, SDL_Window *window) {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 
     // SDL speaks the C API, so hand it the raw handle and wrap the result.
@@ -203,11 +203,11 @@ vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, SDL_Wind
 
 // --- Picking a GPU -----------------------------------------------------------
 
-std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::raii::SurfaceKHR& surface) {
+std::optional<GpuChoice> pick_gpu(const vk::raii::Instance &instance, const vk::raii::SurfaceKHR &surface) {
     std::optional<GpuChoice> best;
     int best_rank = -1;
 
-    for (const vk::raii::PhysicalDevice& device : instance.enumeratePhysicalDevices()) {
+    for (const vk::raii::PhysicalDevice &device : instance.enumeratePhysicalDevices()) {
         const vk::PhysicalDeviceProperties properties = device.getProperties();
         const std::vector<vk::QueueFamilyProperties> families = device.getQueueFamilyProperties();
 
@@ -255,7 +255,7 @@ std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::
 
 // --- Logical device ----------------------------------------------------------
 
-vk::raii::Device create_device(const GpuChoice& gpu) {
+vk::raii::Device create_device(const GpuChoice &gpu) {
     const float priority = 1.0f;
 
     const vk::DeviceQueueCreateInfo queue_info{
@@ -310,12 +310,12 @@ vk::raii::Device create_device(const GpuChoice& gpu) {
 
 // --- Descriptor heap limits --------------------------------------------------
 
-void print_descriptor_heap_properties(const GpuChoice& gpu) {
+void print_descriptor_heap_properties(const GpuChoice &gpu) {
     const auto properties = gpu.device.getProperties2<
         vk::PhysicalDeviceProperties2,
         vk::PhysicalDeviceDescriptorHeapPropertiesEXT
     >();
-    const auto& heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
+    const auto &heap = properties.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
 
     std::println("Descriptor heap:");
     std::println("  image descriptor    {:>4} bytes, {:>3}-byte aligned", heap.imageDescriptorSize, heap.imageDescriptorAlignment);
@@ -692,13 +692,13 @@ struct AccelerationStructures {
 // vertex and index buffers, which must have been created with
 // eAccelerationStructureBuildInputReadOnlyKHR.
 AccelerationStructures build_acceleration_structures(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const Scene& scene,
-    const Buffer& vertex_buffer,
-    const Buffer& index_buffer
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const Scene &scene,
+    const Buffer &vertex_buffer,
+    const Buffer &index_buffer
 );
 ```
 
@@ -722,7 +722,7 @@ vk::DeviceSize align_up(vk::DeviceSize value, vk::DeviceSize alignment) {
 constexpr vk::DeviceSize storage_alignment = 256;
 
 // A buffer acceleration structures are stored in.
-Buffer create_storage(const vk::raii::Device& device, const GpuChoice& gpu, vk::DeviceSize size) {
+Buffer create_storage(const vk::raii::Device &device, const GpuChoice &gpu, vk::DeviceSize size) {
     return create_buffer(device, gpu, size,
         vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -731,7 +731,7 @@ Buffer create_storage(const vk::raii::Device& device, const GpuChoice& gpu, vk::
 // Scratch memory: working space for a build, needed only while it runs. Its
 // address must be a multiple of `alignment`, so the buffer is a little
 // larger and the returned address rounded up within it.
-Buffer create_scratch(const vk::raii::Device& device, const GpuChoice& gpu, vk::DeviceSize size, vk::DeviceSize alignment) {
+Buffer create_scratch(const vk::raii::Device &device, const GpuChoice &gpu, vk::DeviceSize size, vk::DeviceSize alignment) {
     return create_buffer(device, gpu, size + alignment,
         vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -740,7 +740,7 @@ Buffer create_scratch(const vk::raii::Device& device, const GpuChoice& gpu, vk::
 // Vulkan wants an instance's transform as a 3x4 matrix of rows; glm stores
 // 4x4 matrices by columns, so element (row, column) is model[column][row].
 // The bottom row of a model matrix is always (0, 0, 0, 1) and is left out.
-vk::TransformMatrixKHR to_transform(const glm::mat4& model) {
+vk::TransformMatrixKHR to_transform(const glm::mat4 &model) {
     vk::TransformMatrixKHR transform{};
 
     for (int row = 0; row < 3; ++row) {
@@ -757,13 +757,13 @@ vk::TransformMatrixKHR to_transform(const glm::mat4& model) {
 // --- Building ----------------------------------------------------------------
 
 AccelerationStructures build_acceleration_structures(
-    const vk::raii::Device& device,
-    const GpuChoice& gpu,
-    const vk::raii::Queue& queue,
-    const vk::raii::CommandPool& pool,
-    const Scene& scene,
-    const Buffer& vertex_buffer,
-    const Buffer& index_buffer
+    const vk::raii::Device &device,
+    const GpuChoice &gpu,
+    const vk::raii::Queue &queue,
+    const vk::raii::CommandPool &pool,
+    const Scene &scene,
+    const Buffer &vertex_buffer,
+    const Buffer &index_buffer
 ) {
     const auto properties = gpu.device.getProperties2<
         vk::PhysicalDeviceProperties2,
@@ -791,7 +791,7 @@ AccelerationStructures build_acceleration_structures(
     vk::DeviceSize scratch_size = 0;
 
     for (std::size_t i = 0; i < count; ++i) {
-        const Primitive& primitive = scene.primitives[i];
+        const Primitive &primitive = scene.primitives[i];
 
         // The highest vertex an index refers to, which the build must know.
         const auto first = scene.indices.begin() + primitive.first_index;
@@ -868,7 +868,7 @@ AccelerationStructures build_acceleration_structures(
     std::vector<vk::AccelerationStructureInstanceKHR> instances;
 
     for (std::uint32_t i = 0; i < scene.draws.size(); ++i) {
-        const MeshDraw& draw = scene.draws[i];
+        const MeshDraw &draw = scene.draws[i];
 
         instances.push_back(vk::AccelerationStructureInstanceKHR{
             .transform = to_transform(draw.model),
@@ -926,13 +926,13 @@ AccelerationStructures build_acceleration_structures(
     // between makes the TLAS build wait until the BLAS builds are written;
     // the last one makes the TLAS visible to fragment shaders' ray queries.
     std::vector<const vk::AccelerationStructureBuildRangeInfoKHR*> range_pointers;
-    for (const auto& range : ranges) {
+    for (const auto &range : ranges) {
         range_pointers.push_back(&range);
     }
 
-    const vk::AccelerationStructureBuildRangeInfoKHR* tlas_range_pointer = &tlas_range;
+    const vk::AccelerationStructureBuildRangeInfoKHR *tlas_range_pointer = &tlas_range;
 
-    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer& commands) {
+    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
         commands.buildAccelerationStructuresKHR(builds, range_pointers);
 
         const vk::MemoryBarrier2 blases_built{
@@ -1085,12 +1085,12 @@ struct EnvironmentInfo {
 struct FrameData {
     float4x4 view_projection;          // world space -> clip space
     float4x4 inverse_view_projection;  // clip space -> world space
-    Vertex* vertices;                  // the scene's vertices
-    uint* indices;                     // the scene's indices
-    DrawData* draws;                   // one DrawData per draw
-    Material* materials;               // the scene's materials
-    Light* lights;                     // the file's lights
-    EnvironmentInfo* environment;      // the sky's diffuse light and the sun
+    Vertex *vertices;                  // the scene's vertices
+    uint *indices;                     // the scene's indices
+    DrawData *draws;                   // one DrawData per draw
+    Material *materials;               // the scene's materials
+    Light *lights;                     // the file's lights
+    EnvironmentInfo *environment;      // the sky's diffuse light and the sun
     uint64_t scene_tlas;               // the top-level acceleration structure's address
     float3 camera_position;
     float exposure;                    // scene nits -> tone mapper input
@@ -1110,7 +1110,7 @@ struct FrameData {
 
 // Written with vkCmdPushDataEXT before each draw.
 struct PushData {
-    FrameData* frame;  // this frame's data
+    FrameData *frame;  // this frame's data
     uint draw_index;   // which DrawData this draw uses
 };
 
@@ -1209,7 +1209,7 @@ struct VertexOutput {
 // that primitive's vertices begin in the shared buffer.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Vertex vertex = frame.vertices[vertex_id];
     const DrawData draw = frame.draws[push.draw_index];
 
@@ -1429,7 +1429,7 @@ float3 offset_ray_origin(float3 position, float3 normal) {
 // materials, so the texture's heap index differs between them: that's fine,
 // since descriptor heap access is non-uniform unless the SPIR-V marks it
 // uniform, and Slang doesn't.
-float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
+float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
     const uint first = draw.first_index + triangle * 3;
     const Vertex v0 = frame.vertices[int(frame.indices[first]) + draw.vertex_offset];
     const Vertex v1 = frame.vertices[int(frame.indices[first + 1]) + draw.vertex_offset];
@@ -1455,7 +1455,7 @@ float candidate_alpha(FrameData* frame, DrawData draw, Material material, uint t
 //   - a blended one comes back as a candidate that lets 1 - alpha of the
 //     light through, as the transparency pass's reveal sum does. It never
 //     ends the ray: the light goes on, dimmed, to whatever is behind.
-float light_visibility(FrameData* frame, float3 origin, float3 direction, float distance) {
+float light_visibility(FrameData *frame, float3 origin, float3 direction, float distance) {
     const RaytracingAccelerationStructure scene = RaytracingAccelerationStructure(frame.scene_tlas);
 
     RayDesc ray;
@@ -1499,7 +1499,7 @@ float3 shadow_ray_origin(float3 position, float3 face_normal, float3 l) {
 // shade(), times how much of the light gets through. A ray is only traced
 // when the light could reach the surface at all.
 float3 shade_shadowed(
-    Surface surface, FrameData* frame, float3 position, float3 face_normal,
+    Surface surface, FrameData *frame, float3 position, float3 face_normal,
     float3 l, float3 illuminance, float distance
 ) {
     if (dot(surface.normal, l) <= 0.0 || all(illuminance == 0.0)) {
@@ -1550,7 +1550,7 @@ float3 punctual_light(Light light, float3 position, out float3 l, out float dist
 
 // The sky's irradiance on a surface facing `n`, in lux: its nine spherical
 // harmonics coefficients, each weighted by its basis function at `n`.
-float3 sky_irradiance(EnvironmentInfo* environment, float3 n) {
+float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     const float basis[9] = {
         0.282095,
         0.488603 * n.y,
@@ -1617,7 +1617,7 @@ float specular_occlusion(float n_dot_v, float visibility, float alpha) {
 //     the BRDF reflects overall (the table, as a scale and bias on F0),
 //     dimmed by the specular occlusion.
 //   - A roughness-aware Fresnel term splits the light between the two.
-float3 shade_environment(Surface surface, FrameData* frame, float roughness, float visibility, float3 irradiance_normal) {
+float3 shade_environment(Surface surface, FrameData *frame, float roughness, float visibility, float3 irradiance_normal) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
     const float3 f0 = lerp(float3(0.04), surface.base_color, surface.metallic);
     const float3 fresnel = f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(1.0 - n_dot_v, 5.0);
@@ -1663,7 +1663,7 @@ float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
 // surfaces the lighting pass will shade.
 [shader("fragment")]
 float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[push.draw_index].material];
 
     if (alpha_mode == alpha_mask) {
@@ -1683,7 +1683,7 @@ float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Ta
 // transparency pass adds it into its sums.
 // `front_face`: whether this triangle faces the camera.
 float4 shade_fragment(VertexOutput input, bool front_face) {
-    FrameData* frame = push.frame;
+    FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[push.draw_index].material];
 
     // Base color: factor x texture x vertex color. sRGB textures are decoded
@@ -1920,7 +1920,7 @@ struct Frame {
     vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
     vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     Buffer data;                                   // one FrameData, host-visible
-    FrameData* mapped = nullptr;                   // `data`, mapped for the CPU to write
+    FrameData *mapped = nullptr;                   // `data`, mapped for the CPU to write
 };
 
 // --- Recording a frame -------------------------------------------------------
@@ -1928,7 +1928,7 @@ struct Frame {
 // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
 // `aspect` is which part of the image: its color, or its depth.
 void transition(
-    const vk::raii::CommandBuffer& commands,
+    const vk::raii::CommandBuffer &commands,
     vk::Image image,
     vk::ImageLayout from,
     vk::ImageLayout to,
@@ -2022,13 +2022,13 @@ struct DrawList {
 // Draws one alpha mode's batch with `pipeline`. Push data says where the
 // frame's data is and which DrawData to use; the primitive's index range
 // and vertex offset go to drawIndexed.
-void draw_batch(const vk::raii::CommandBuffer& commands, const DrawList& draws, std::size_t mode, const vk::raii::Pipeline& pipeline) {
+void draw_batch(const vk::raii::CommandBuffer &commands, const DrawList &draws, std::size_t mode, const vk::raii::Pipeline &pipeline) {
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
     for (const std::uint32_t i : draws.batches[mode]) {
-        const MeshDraw& mesh_draw = draws.mesh_draws[i];
-        const Primitive& primitive = draws.primitives[mesh_draw.primitive];
-        const SceneMaterial& material = draws.scene_materials[primitive.material];
+        const MeshDraw &mesh_draw = draws.mesh_draws[i];
+        const Primitive &primitive = draws.primitives[mesh_draw.primitive];
+        const SceneMaterial &material = draws.scene_materials[primitive.material];
 
         // Single-sided surfaces are invisible from behind, so the GPU can
         // skip their back faces before running the fragment shader.
@@ -2048,7 +2048,7 @@ void draw_batch(const vk::raii::CommandBuffer& commands, const DrawList& draws, 
 
 // The viewport and scissor every pass uses: the whole image. The pipelines
 // leave both dynamic.
-void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) {
+void set_viewport(const vk::raii::CommandBuffer &commands, vk::Extent2D extent) {
     commands.setViewport(0, vk::Viewport{
         .x = 0.0f,
         .y = 0.0f,
@@ -2071,13 +2071,13 @@ void set_viewport(const vk::raii::CommandBuffer& commands, vk::Extent2D extent) 
 //   5. tone mapping, from the HDR image into the swapchain image, which is
 //      then ready to present.
 void record_frame(
-    const vk::raii::CommandBuffer& commands,
-    const Swapchain& swapchain,
+    const vk::raii::CommandBuffer &commands,
+    const Swapchain &swapchain,
     std::uint32_t image_index,
-    const ScenePipelines& pipelines,
-    const AmbientOcclusion& ambient_occlusion,
-    const DescriptorHeaps& heaps,
-    const DrawList& draws
+    const ScenePipelines &pipelines,
+    const AmbientOcclusion &ambient_occlusion,
+    const DescriptorHeaps &heaps,
+    const DrawList &draws
 ) {
     const vk::Image image = swapchain.images[image_index];
     const vk::Image hdr = *swapchain.hdr.handle;
@@ -2405,7 +2405,7 @@ constexpr std::array view_names{
 //   - =   exposure, half a stop darker or brighter: like a camera's
 //         exposure compensation, + is brighter
 // Holding a key repeats it.
-bool poll_events(SDL_Window* window, CameraInput& input, Settings& settings) {
+bool poll_events(SDL_Window *window, CameraInput &input, Settings &settings) {
     input = CameraInput{};
     SDL_Event event;
 
@@ -2557,12 +2557,12 @@ int main() {
         });
 
         std::vector<Frame> frames;
-        for (vk::raii::CommandBuffer& commands : command_buffers) {
+        for (vk::raii::CommandBuffer &commands : command_buffers) {
             // Host-coherent: the CPU's writes reach the GPU without a flush.
             Buffer data = create_buffer(device, *gpu, sizeof(FrameData),
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            auto* mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
+            auto *mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
 
             frames.push_back(Frame{
                 .commands = std::move(commands),
@@ -2590,8 +2590,8 @@ int main() {
         // the model matrix itself would tilt it off the surface.
         std::vector<DrawData> draw_data;
 
-        for (const MeshDraw& draw : scene.draws) {
-            const Primitive& primitive = scene.primitives[draw.primitive];
+        for (const MeshDraw &draw : scene.draws) {
+            const Primitive &primitive = scene.primitives[draw.primitive];
 
             draw_data.push_back(DrawData{
                 .model = draw.model,
@@ -2661,7 +2661,7 @@ int main() {
         // The swapchain's images are recreated with it, so their descriptors
         // are rewritten every time: after this, only while the GPU is idle.
         const auto describe_screen = [&] {
-            const auto whole = [](const Image& image, vk::ImageAspectFlags aspect) {
+            const auto whole = [](const Image &image, vk::ImageAspectFlags aspect) {
                 return vk::ImageViewCreateInfo{
                     .image = *image.handle,
                     .viewType = vk::ImageViewType::e2D,
@@ -2709,7 +2709,7 @@ int main() {
         // Heap indices are one past the scene's: image i is texture i + 1 and
         // sampler i is sampler i + 1, so "none" (-1) becomes 0, the white
         // texture or the default sampler.
-        const auto slot = [](const TextureRef& ref) {
+        const auto slot = [](const TextureRef &ref) {
             return TextureSlot{
                 .texture = static_cast<std::uint32_t>(ref.image + 1),
                 .sampler = static_cast<std::uint32_t>(ref.sampler + 1),
@@ -2719,7 +2719,7 @@ int main() {
 
         std::vector<Material> materials;
 
-        for (const SceneMaterial& material : scene.materials) {
+        for (const SceneMaterial &material : scene.materials) {
             materials.push_back(Material{
                 .base_color_factor = material.base_color_factor,
                 .emissive_factor = material.emissive_factor,
@@ -2835,7 +2835,7 @@ int main() {
 
             // --- Render -----------------------------------------------------
 
-            Frame& frame = frames[frame_count % frames_in_flight];
+            Frame &frame = frames[frame_count % frames_in_flight];
 
             // 1. Wait until the GPU is done with this frame's command buffer and
             //    data from last time, then write this frame's data.
@@ -2937,7 +2937,7 @@ int main() {
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();
         std::println("Presented {} frames", frame_count);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::println(stderr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

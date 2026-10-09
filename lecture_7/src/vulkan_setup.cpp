@@ -10,12 +10,12 @@
 
 namespace {
 
-constexpr const char* validation_layer = "VK_LAYER_KHRONOS_validation";
+constexpr const char *validation_layer = "VK_LAYER_KHRONOS_validation";
 
 VKAPI_ATTR vk::Bool32 VKAPI_CALL on_validation_message(
     vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
     vk::DebugUtilsMessageTypeFlagsEXT /*types*/,
-    const vk::DebugUtilsMessengerCallbackDataEXT* data,
+    const vk::DebugUtilsMessengerCallbackDataEXT *data,
     void* /*user_data*/
 ) {
     std::println(stderr, "[validation {}] {}", vk::to_string(severity), data->pMessage);
@@ -33,15 +33,15 @@ int rank(vk::PhysicalDeviceType type) {
 
 }  // namespace
 
-bool validation_layer_available(const vk::raii::Context& context) {
-    return std::ranges::any_of(context.enumerateInstanceLayerProperties(), [](const vk::LayerProperties& layer) {
+bool validation_layer_available(const vk::raii::Context &context) {
+    return std::ranges::any_of(context.enumerateInstanceLayerProperties(), [](const vk::LayerProperties &layer) {
         return std::string_view(layer.layerName.data()) == validation_layer;
     });
 }
 
 vk::raii::Instance create_instance(
-    const vk::raii::Context& context,
-    std::span<const char* const> extensions,
+    const vk::raii::Context &context,
+    std::span<const char *const> extensions,
     bool validation
 ) {
     std::vector<const char*> enabled_extensions(extensions.begin(), extensions.end());
@@ -71,7 +71,7 @@ vk::raii::Instance create_instance(
     return vk::raii::Instance(context, create_info);
 }
 
-vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance& instance) {
+vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance &instance) {
     using Severity = vk::DebugUtilsMessageSeverityFlagBitsEXT;
     using Type = vk::DebugUtilsMessageTypeFlagBitsEXT;
 
@@ -84,7 +84,7 @@ vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance
     return vk::raii::DebugUtilsMessengerEXT(instance, create_info);
 }
 
-vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, SDL_Window* window) {
+vk::raii::SurfaceKHR create_surface(const vk::raii::Instance &instance, SDL_Window *window) {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 
     // SDL speaks the C API, so hand it the raw handle and wrap the result.
@@ -95,11 +95,11 @@ vk::raii::SurfaceKHR create_surface(const vk::raii::Instance& instance, SDL_Wind
     return vk::raii::SurfaceKHR(instance, surface);
 }
 
-std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::raii::SurfaceKHR& surface) {
+std::optional<GpuChoice> pick_gpu(const vk::raii::Instance &instance, const vk::raii::SurfaceKHR &surface) {
     std::optional<GpuChoice> best;
     int best_rank = -1;
 
-    for (const vk::raii::PhysicalDevice& device : instance.enumeratePhysicalDevices()) {
+    for (const vk::raii::PhysicalDevice &device : instance.enumeratePhysicalDevices()) {
         const vk::PhysicalDeviceProperties properties = device.getProperties();
         const std::vector<vk::QueueFamilyProperties> families = device.getQueueFamilyProperties();
 
@@ -135,7 +135,7 @@ std::optional<GpuChoice> pick_gpu(const vk::raii::Instance& instance, const vk::
     return best;
 }
 
-vk::raii::Device create_device(const GpuChoice& gpu) {
+vk::raii::Device create_device(const GpuChoice &gpu) {
     const float priority = 1.0f;
 
     const vk::DeviceQueueCreateInfo queue_info{

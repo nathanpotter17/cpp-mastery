@@ -53,7 +53,7 @@ A board is a fixed number of cells known at compile time: 8 × 8. We want to sto
   - **`const bool`:** the viewer can read the cells, but not change them.
 - **`std::span<const std::string_view>`:** `place` takes its pattern as a span of `string_view`s. Lecture 1 used `const char*` for text; a `std::string_view` is the modern version, a view of characters that also knows its length. Here each row of the pattern is one `string_view`. 3.5 covers strings and views fully.
 - **Defaulted comparison:** `bool operator==(const Grid&) const = default;` (C++20) asks the compiler to write `==` for us by comparing every member in order. Here that's the `std::array`, which compares all 64 cells. The simulation uses it to spot a repeated generation.
-- **Passing by reference:** `step(const Grid& grid)` reads a grid without copying it, and `place(Grid& grid, ...)` changes the caller's grid. That's lecture 2's guideline: a `const` reference to read, a non-`const` reference to modify.
+- **Passing by reference:** `step(const Grid &grid)` reads a grid without copying it, and `place(Grid &grid, ...)` changes the caller's grid. That's lecture 2's guideline: a `const` reference to read, a non-`const` reference to modify.
 
 ### Code
 `lecture_3/src/includes/grid.h`:
@@ -95,14 +95,14 @@ int count_alive(std::span<const bool> cells);
 
 // Copies a pattern onto the grid with its top-left corner at (x, y).
 // Each row of the pattern is text: '#' is alive, anything else is dead.
-void place(Grid& grid, std::span<const std::string_view> pattern, int x, int y);
+void place(Grid &grid, std::span<const std::string_view> pattern, int x, int y);
 
 // The next generation: a live cell with 2 or 3 live neighbors survives,
 // a dead cell with exactly 3 comes alive, and every other cell is dead.
-Grid step(const Grid& grid);
+Grid step(const Grid &grid);
 
 // The grid as text, one line per row.
-std::string render(const Grid& grid);
+std::string render(const Grid &grid);
 ```
 
 ## 3.3 Starting patterns: `src/includes/patterns.h`
@@ -216,7 +216,7 @@ int count_alive(std::span<const bool> cells) {
     return static_cast<int>(std::ranges::count(cells, true));
 }
 
-void place(Grid& grid, std::span<const std::string_view> pattern, int x, int y) {
+void place(Grid &grid, std::span<const std::string_view> pattern, int x, int y) {
     // Spelled out with iterators, this is what a range-for loop does:
     // begin() points at the first element, end() one past the last.
     for (auto row = pattern.begin(); row != pattern.end(); ++row) {
@@ -230,7 +230,7 @@ void place(Grid& grid, std::span<const std::string_view> pattern, int x, int y) 
 
 // --- One generation ----------------------------------------------------------
 
-Grid step(const Grid& grid) {
+Grid step(const Grid &grid) {
     Grid next;
 
     for (int y = 0; y < Grid::height; ++y) {
@@ -254,7 +254,7 @@ Grid step(const Grid& grid) {
 
 // --- Text --------------------------------------------------------------------
 
-std::string render(const Grid& grid) {
+std::string render(const Grid &grid) {
     std::string text;
     // One allocation up front: each row is width characters plus a '\n'.
     text.reserve(static_cast<std::size_t>((Grid::width + 1) * Grid::height));
@@ -331,7 +331,7 @@ void demo_c_arrays() {
 
     // An array converts ("decays") to a pointer to its first element, and
     // the pointer has no idea how many elements follow.
-    const std::string_view* first = patterns::glider;
+    const std::string_view *first = patterns::glider;
     std::println("    as a pointer: {} bytes, first row {:?}, row count lost", sizeof(first), *first);
 
     // A span keeps the pointer and the count together.
@@ -362,7 +362,7 @@ void demo_std_array() {
 
 // --- std::span ---------------------------------------------------------------
 
-void demo_spans(const Grid& grid) {
+void demo_spans(const Grid &grid) {
     std::println("std::span:");
 
     // A fixed-extent span knows its size at compile time, so it stores only
@@ -380,7 +380,7 @@ void demo_spans(const Grid& grid) {
 
 // --- std::string and std::string_view ----------------------------------------
 
-void demo_strings(const Grid& grid) {
+void demo_strings(const Grid &grid) {
     std::println("std::string and std::string_view:");
 
     // A std::string owns its characters, and frees them when it's destroyed.
@@ -408,7 +408,7 @@ struct Cycle {
     std::size_t period = 0; // generations per cycle; 0 if none was found
 };
 
-Cycle find_cycle(Grid grid, std::vector<Grid>& history, std::size_t limit) {
+Cycle find_cycle(Grid grid, std::vector<Grid> &history, std::size_t limit) {
     for (std::size_t generation = 0; generation < limit; ++generation) {
         // Use the iterator before push_back: a push_back that grows the
         // vector moves every element, and old iterators would dangle.
@@ -433,14 +433,14 @@ Cycle find_cycle(Grid grid, std::vector<Grid>& history, std::size_t limit) {
 void print_side_by_side(std::span<const Grid> frames) {
     std::vector<std::string> texts;
     texts.reserve(frames.size());
-    for (const Grid& frame : frames) {
+    for (const Grid &frame : frames) {
         // render returns a temporary string, so push_back moves it in.
         texts.push_back(render(frame));
     }
 
     for (int y = 0; y < Grid::height; ++y) {
         std::string line = "   ";
-        for (const std::string& text : texts) {
+        for (const std::string &text : texts) {
             const auto offset = static_cast<std::size_t>(y * (Grid::width + 1));
             line += ' ';
             line += std::string_view{text}.substr(offset, Grid::width);
@@ -476,7 +476,7 @@ int main() {
         {"glider", patterns::glider},
     };
 
-    for (const Start& start : starts) {
+    for (const Start &start : starts) {
         std::println("{}:", start.name);
 
         Grid grid;

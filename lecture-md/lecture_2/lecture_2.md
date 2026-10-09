@@ -54,8 +54,8 @@ Object lifetimes are invisible: a copy here, a destructor there, and nothing tel
 - **`class` vs `struct`:** they're the same thing, except that a `class`'s members are private by default. `public:` members can be used by anyone; `private:` ones only by the class's own member functions. `Tracer` keeps its name private, and offers read access through `name()`.
 - **Constructors** run when an object is created. `explicit Tracer(char name)` takes the name. The *member initializer list*, `: name_{name}`, initializes the members before the constructor's body runs. `explicit` stops a lone `char` converting silently into a `Tracer`.
 - **The destructor**, `~Tracer()`, runs automatically when the object's lifetime ends. We never call it ourselves. This is the most important function in C++: everything else in this lecture is built on it.
-- **The copy constructor**, `Tracer(const Tracer& other)`, creates a new object as a copy of an existing one.
-- **The move constructor**, `Tracer(Tracer&& other)`, creates a new object by *taking over* `other`'s contents. `Tracer&&` is an *rvalue reference*: it binds to objects that are about to disappear, or that we've explicitly given up with `std::move` (2.4). A moved-from object is still alive, and its destructor still runs, so the move constructor must leave it in a safe state. Ours marks it with the name `_`.
+- **The copy constructor**, `Tracer(const Tracer &other)`, creates a new object as a copy of an existing one.
+- **The move constructor**, `Tracer(Tracer &&other)`, creates a new object by *taking over* `other`'s contents. `Tracer&&` is an *rvalue reference*: it binds to objects that are about to disappear, or that we've explicitly given up with `std::move` (2.4). A moved-from object is still alive, and its destructor still runs, so the move constructor must leave it in a safe state. Ours marks it with the name `_`.
 - **`noexcept`** promises the move constructor never throws an exception. When a `std::vector` grows (lecture 3), it moves its elements only if their move constructor promises this, and copies them otherwise. A type that can't be copied is moved anyway.
 - **`= delete`** removes a function. We don't need assignment between `Tracer`s, so we delete both assignment operators; code that tries one won't compile.
 - **The special member functions:** the destructor, the copy constructor, copy assignment, the move constructor and move assignment. If we don't declare them, the compiler writes them for us, member by member. Declaring some affects which others it writes, which is why `Tracer` lists all of them, either defined or deleted.
@@ -79,20 +79,20 @@ public:
     }
 
     // Copy constructor: a new object with the same value as `other`.
-    Tracer(const Tracer& other) : name_{other.name_} {
+    Tracer(const Tracer &other) : name_{other.name_} {
         std::println("    [{}] copied", name_);
     }
 
     // Move constructor: takes over `other`'s contents. `other` stays alive and
     // will still be destroyed, so we mark it as emptied.
-    Tracer(Tracer&& other) noexcept : name_{other.name_} {
+    Tracer(Tracer &&other) noexcept : name_{other.name_} {
         other.name_ = '_';
         std::println("    [{}] moved", name_);
     }
 
     // We never assign one Tracer to another, so we forbid it.
-    Tracer& operator=(const Tracer&) = delete;
-    Tracer& operator=(Tracer&&) = delete;
+    Tracer &operator=(const Tracer&) = delete;
+    Tracer &operator=(Tracer&&) = delete;
 
     // Destructor: runs automatically when the object's lifetime ends.
     ~Tracer() {
@@ -116,16 +116,16 @@ Before we manage memory ourselves, we need to know how C++ manages it for us, an
 ### How
 - **`main.cpp` begins** with its includes: our two headers first, then the standard ones. `arena.h` is written in 2.6.
 - **Automatic storage ("the stack"):** a variable declared in a function lives until the end of its enclosing block, the closing `}`. Then its destructor runs. Objects in the same block are destroyed in the reverse order of their construction, so the newest object goes first. A bare `{ ... }` block is the simplest way to end lifetimes early.
-- **References:** `int& alias = count;` makes `alias` another name for `count`. Anything done to `alias` happens to `count`. A reference must be initialized, can't be null, and can never be re-bound to another object.
-- **Pointers:** `int* pointer = &count;` stores the address of `count`. `&` takes an address, and `*pointer` (dereferencing) is the object at that address. Unlike a reference, a pointer can be re-pointed at another object, or set to `nullptr`, meaning "points at nothing". Dereferencing `nullptr` is undefined behavior, so code that receives a pointer checks it first.
+- **References:** `int &alias = count;` makes `alias` another name for `count`. Anything done to `alias` happens to `count`. A reference must be initialized, can't be null, and can never be re-bound to another object.
+- **Pointers:** `int *pointer = &count;` stores the address of `count`. `&` takes an address, and `*pointer` (dereferencing) is the object at that address. Unlike a reference, a pointer can be re-pointed at another object, or set to `nullptr`, meaning "points at nothing". Dereferencing `nullptr` is undefined behavior, so code that receives a pointer checks it first.
 - **`const` and pointers:** read the declaration right to left.
-  - `const int* read_only` is a pointer to a `const int`: we can't change the value through it, but we can re-point it.
-  - `int* const fixed` is a `const` pointer to an `int`: we can change the value, but not where it points.
+  - `const int *read_only` is a pointer to a `const int`: we can't change the value through it, but we can re-point it.
+  - `int *const fixed` is a `const` pointer to an `int`: we can change the value, but not where it points.
 - **`->`:** `tracer->name()` is shorthand for `(*tracer).name()`, calling a member through a pointer.
 - **Passing arguments:**
   - **By value** (`Tracer tracer`): the parameter is a copy. The output shows `[c] copied` on the way in and `[c] destroyed` on the way out.
-  - **By `const` reference** (`const Tracer& tracer`): no copy, and no changes. This is the default for passing anything bigger than a few numbers.
-  - **By pointer** (`const Tracer* tracer`): no copy, and the caller may pass `nullptr` for "no object". Use it when "nothing" is a valid argument.
+  - **By `const` reference** (`const Tracer &tracer`): no copy, and no changes. This is the default for passing anything bigger than a few numbers.
+  - **By pointer** (`const Tracer *tracer`): no copy, and the caller may pass `nullptr` for "no object". Use it when "nothing" is a valid argument.
 - **Lifetimes end at `}` regardless of how the block is left.** `c` is destroyed after the demo's last line, at the closing brace.
 - **Dangling:** a reference or pointer to an object whose lifetime has ended *dangles*, and using it is undefined behavior. The classic mistake is returning a reference to a local variable, which is destroyed as the function returns. Compilers warn about the simple cases, and the sanitizer build (`build-debug-clang-ub.bash`) catches many of the rest at run time.
 
@@ -154,12 +154,12 @@ void inspect_copy(Tracer tracer) {
 
 // By reference: the parameter is another name for the caller's object.
 // const: we promise not to change it.
-void inspect_reference(const Tracer& tracer) {
+void inspect_reference(const Tracer &tracer) {
     std::println("    inspecting {} through a reference", tracer.name());
 }
 
 // By pointer: the parameter holds the object's address, or nullptr for "none".
-void inspect_pointer(const Tracer* tracer) {
+void inspect_pointer(const Tracer *tracer) {
     if (tracer == nullptr) {
         std::println("    nothing to inspect");
         return;
@@ -183,10 +183,10 @@ void demo_lifetimes() {
     std::println("References and pointers:");
     int count = 3;
 
-    int& alias = count; // a reference: another name for count
+    int &alias = count; // a reference: another name for count
     alias += 1;
 
-    int* pointer = &count; // a pointer: holds count's address (&count)
+    int *pointer = &count; // a pointer: holds count's address (&count)
     *pointer += 1;         // *pointer is the object it points to
 
     std::println("    count = {}, alias = {}, *pointer = {}", count, alias, *pointer);
@@ -199,8 +199,8 @@ void demo_lifetimes() {
     std::println("    after re-pointing: count = {}, other = {}", count, other);
 
     // const on the left of * protects the value; on the right, the pointer.
-    const int* read_only = &count; // *read_only = 1; won't compile
-    int* const fixed = &count;     // fixed = &other;  won't compile
+    const int *read_only = &count; // *read_only = 1; won't compile
+    int *const fixed = &count;     // fixed = &other;  won't compile
     *fixed = 6;
     std::println("    through read_only: {}", *read_only);
 
@@ -268,7 +268,7 @@ void consume(std::unique_ptr<Tracer> tracer) {
 
 // A function object: closer(file) calls this operator(), closing the file.
 struct FileCloser {
-    void operator()(std::FILE* file) const {
+    void operator()(std::FILE *file) const {
         std::println("    closing the file");
         std::fclose(file);
     }
@@ -290,7 +290,7 @@ static_assert(std::is_move_constructible_v<Owner>);
 
 void demo_ownership() {
     std::println("Raw new and delete:");
-    Tracer* raw = new Tracer{'r'};
+    Tracer *raw = new Tracer{'r'};
     std::println("    {} lives on the heap", raw->name());
     delete raw; // without this line, r is never destroyed: a leak
 
@@ -422,8 +422,8 @@ static_assert(alignof(Vec4) == 16 && sizeof(Vec4) == 16);
 // --- Reading raw memory ------------------------------------------------------
 
 // Any object may be read as a sequence of unsigned chars: its bytes.
-void print_bytes(const char* label, const void* object, std::size_t size) {
-    const auto* bytes = static_cast<const unsigned char*>(object);
+void print_bytes(const char *label, const void *object, std::size_t size) {
+    const auto *bytes = static_cast<const unsigned char*>(object);
 
     std::print("    {:<12}", label);
     for (std::size_t i = 0; i < size; ++i) {
@@ -435,7 +435,7 @@ void print_bytes(const char* label, const void* object, std::size_t size) {
 }
 
 // An address is a number, so alignment is divisibility.
-bool is_aligned(const void* address, std::size_t alignment) {
+bool is_aligned(const void *address, std::size_t alignment) {
     return reinterpret_cast<std::uintptr_t>(address) % alignment == 0;
 }
 
@@ -517,22 +517,22 @@ public:
     // all five special member functions, because the generated ones would
     // just copy the pointer.
     Arena(const Arena&) = delete; // two owners would both delete[] the block
-    Arena& operator=(const Arena&) = delete;
-    Arena(Arena&& other) noexcept;
-    Arena& operator=(Arena&& other) noexcept;
+    Arena &operator=(const Arena&) = delete;
+    Arena(Arena &&other) noexcept;
+    Arena &operator=(Arena &&other) noexcept;
     ~Arena();
 
     // `size` bytes starting at a multiple of `alignment`, or nullptr if the
     // arena is full. `alignment` must be a power of two.
-    void* allocate(std::size_t size, std::size_t alignment);
+    void *allocate(std::size_t size, std::size_t alignment);
 
     // A member function template: the caller picks T, as in create<Vec4>().
     template <typename T>
-    T* create() {
+    T *create() {
         // The arena never runs destructors, so T must not need one.
         static_assert(std::is_trivially_destructible_v<T>);
 
-        void* memory = allocate(sizeof(T), alignof(T));
+        void *memory = allocate(sizeof(T), alignof(T));
         if (memory == nullptr) {
             return nullptr;
         }
@@ -550,10 +550,10 @@ public:
     }
 
     // Where a pointer from this arena lies, in bytes from the block's start.
-    std::size_t offset_of(const void* pointer) const;
+    std::size_t offset_of(const void *pointer) const;
 
 private:
-    std::byte* memory_ = nullptr;
+    std::byte *memory_ = nullptr;
     std::size_t capacity_ = 0;
     std::size_t used_ = 0;
 };
@@ -609,12 +609,12 @@ Arena::~Arena() {
 
 // std::exchange(x, v) sets x to v and returns x's old value: we take other's
 // block and leave other empty, so only one arena ever owns it.
-Arena::Arena(Arena&& other) noexcept
+Arena::Arena(Arena &&other) noexcept
     : memory_{std::exchange(other.memory_, nullptr)},
       capacity_{std::exchange(other.capacity_, 0)},
       used_{std::exchange(other.used_, 0)} {}
 
-Arena& Arena::operator=(Arena&& other) noexcept {
+Arena &Arena::operator=(Arena &&other) noexcept {
     // Moving an arena into itself must not free its own block.
     if (this != &other) {
         delete[] memory_;
@@ -627,7 +627,7 @@ Arena& Arena::operator=(Arena&& other) noexcept {
 
 // --- Allocating --------------------------------------------------------------
 
-void* Arena::allocate(std::size_t size, std::size_t alignment) {
+void *Arena::allocate(std::size_t size, std::size_t alignment) {
     // A bad alignment is a bug in the caller, so we assert. A power of two
     // has one bit set, and x & (x - 1) clears the lowest set bit.
     assert(alignment != 0 && (alignment & (alignment - 1)) == 0 && "alignment must be a power of two");
@@ -644,12 +644,12 @@ void* Arena::allocate(std::size_t size, std::size_t alignment) {
         return nullptr;
     }
 
-    std::byte* result = memory_ + used_ + padding;
+    std::byte *result = memory_ + used_ + padding;
     used_ += padding + size;
     return result;
 }
 
-std::size_t Arena::offset_of(const void* pointer) const {
+std::size_t Arena::offset_of(const void *pointer) const {
     // Subtracting two pointers into the same block counts the bytes between them.
     return static_cast<std::size_t>(static_cast<const std::byte*>(pointer) - memory_);
 }
@@ -679,10 +679,10 @@ void demo_arena() {
     std::println("Arena:");
     Arena arena{64};
 
-    char* letter = arena.create<char>();
-    Vec4* vector = arena.create<Vec4>();
-    double* number = arena.create<double>();
-    Tight* tight = arena.create<Tight>();
+    char *letter = arena.create<char>();
+    Vec4 *vector = arena.create<Vec4>();
+    double *number = arena.create<double>();
+    Tight *tight = arena.create<Tight>();
 
     *letter = 'x';
     vector->w = 1.0f;
@@ -696,7 +696,7 @@ void demo_arena() {
     std::println("    used {} of {} bytes", arena.used(), arena.capacity());
 
     // The next Vec4 would start at 64, the end of the block.
-    const Vec4* overflow = arena.create<Vec4>();
+    const Vec4 *overflow = arena.create<Vec4>();
     std::println("    another Vec4 fits: {}", overflow != nullptr);
 
     // Moving hands over the block; the objects in it don't move at all.
