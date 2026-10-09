@@ -291,8 +291,7 @@ Without it, clangd falls back to guessing: `'SDL3/SDL.h' file not found`, then a
 ### Code
 `game-engine/src/main.cpp` (temporary):
 ```cpp
-// Temporary: just enough for a first build, so CMake writes the
-// compile_commands.json clangd needs. Section 0.8 replaces this file.
+// Temporary: just enough for a first build, so CMake writes the compile_commands.json clangd needs. Section 0.8 replaces this file.
 #include <SDL3/SDL.h>
 
 #include <print>
@@ -332,8 +331,7 @@ Vulkan can't open a window by itself, because windows belong to the operating sy
 ```cpp
 #pragma once
 
-// SDL_vulkan.h declares its own VkInstance/VkSurfaceKHR unless vulkan.h has
-// been included first; include it first so there's only one definition.
+// SDL_vulkan.h declares its own VkInstance/VkSurfaceKHR unless vulkan.h has been included first; include it first so there's only one definition.
 #include <vulkan/vulkan.h>
 
 #include <SDL3/SDL.h>
@@ -346,40 +344,39 @@ Vulkan can't open a window by itself, because windows belong to the operating sy
 #include <string>
 #include <string_view>
 
-// --- SDL itself --------------------------------------------------------------
+// SDL itself
 
 // Owns SDL_Init()/SDL_Quit() for the lifetime of the program.
 class SdlContext {
-public:
-    SdlContext() {
-        if (!SDL_Init(SDL_INIT_VIDEO)) {
-            throw std::runtime_error(std::string("SDL_Init failed (") + SDL_GetError() + ")");
-        }
-    }
-
-    ~SdlContext() { SDL_Quit(); }
-
-    SdlContext(const SdlContext&) = delete;
-    SdlContext &operator=(const SdlContext&) = delete;
-
-    // "wayland", "x11", "windows", ...
-    static std::string_view video_driver() { return SDL_GetCurrentVideoDriver(); }
-
-    // Instance extensions the platform needs to present to a window. SDL only
-    // knows them once Vulkan is loaded, which creating a Vulkan window does.
-    static std::span<const char *const> required_vulkan_extensions() {
-        std::uint32_t count = 0;
-        const char *const *names = SDL_Vulkan_GetInstanceExtensions(&count);
-
-        if (!names) {
-            throw std::runtime_error(std::string("SDL found no Vulkan support (") + SDL_GetError() + ")");
+    public:
+        SdlContext() {
+            if (!SDL_Init(SDL_INIT_VIDEO)) {
+                throw std::runtime_error(std::string("SDL_Init failed (") + SDL_GetError() + ")");
+            }
         }
 
-        return {names, count};
-    }
+        ~SdlContext() { SDL_Quit(); }
+
+        SdlContext(const SdlContext&) = delete;
+        SdlContext &operator=(const SdlContext&) = delete;
+
+        // "wayland", "x11", "windows", ...
+        static std::string_view video_driver() { return SDL_GetCurrentVideoDriver(); }
+
+        // Instance extensions the platform needs to present to a window. SDL only knows them once Vulkan is loaded, which creating a Vulkan window does.
+        static std::span<const char *const> required_vulkan_extensions() {
+            std::uint32_t count = 0;
+            const char *const *names = SDL_Vulkan_GetInstanceExtensions(&count);
+
+            if (!names) {
+                throw std::runtime_error(std::string("SDL found no Vulkan support (") + SDL_GetError() + ")");
+            }
+
+            return {names, count};
+        }
 };
 
-// --- Windows -----------------------------------------------------------------
+// Windows
 
 using Window = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>;
 
@@ -457,35 +454,29 @@ struct GpuChoice {
     std::uint32_t queue_family;
 };
 
-// --- Instance ----------------------------------------------------------------
+// Instance
 
-// True if VK_LAYER_KHRONOS_validation is installed (it ships with the SDK,
-// or `sudo apt install vulkan-validationlayers`).
+// True if VK_LAYER_KHRONOS_validation is installed (it ships with the SDK, or `sudo apt install vulkan-validationlayers`).
 bool validation_layer_available(const vk::raii::Context &context);
 
-// `extensions` are the instance extensions to enable (e.g. from SDL).
-// With `validation`, also enables the validation layer and VK_EXT_debug_utils.
+// `extensions` are the instance extensions to enable (e.g. from SDL). With `validation`, also enables the validation layer and VK_EXT_debug_utils.
 vk::raii::Instance create_instance(
     const vk::raii::Context &context,
     std::span<const char *const> extensions,
     bool validation
 );
 
-// Prints validation warnings and errors to stderr. Needs an instance
-// created with `validation`.
+// Prints validation warnings and errors to stderr. Needs an instance created with `validation`.
 vk::raii::DebugUtilsMessengerEXT create_debug_messenger(const vk::raii::Instance &instance);
 
 vk::raii::SurfaceKHR create_surface(const vk::raii::Instance &instance, SDL_Window *window);
 
-// --- Device ------------------------------------------------------------------
+// Device
 
-// Prints every GPU, then picks a Vulkan 1.4 one that can draw and present to
-// `surface` and has everything create_device() turns on, preferring discrete
-// over integrated over everything else.
+// Prints every GPU, then picks a Vulkan 1.4 one that can draw and present to `surface` and has everything create_device() turns on, preferring discrete over integrated over everything else.
 std::optional<GpuChoice> pick_gpu(const vk::raii::Instance &instance, const vk::raii::SurfaceKHR &surface);
 
-// A logical device with one queue from `gpu.queue_family`, the swapchain and
-// descriptor heap extensions, and every feature the renderer relies on.
+// A logical device with one queue from `gpu.queue_family`, the swapchain and descriptor heap extensions, and every feature the renderer relies on.
 vk::raii::Device create_device(const GpuChoice &gpu);
 
 // Prints how big `gpu`'s descriptors are and how big its heaps may get.
@@ -506,85 +497,82 @@ void print_descriptor_heap_properties(const GpuChoice &gpu);
 
 namespace {
 
-constexpr const char *validation_layer = "VK_LAYER_KHRONOS_validation";
+    constexpr const char *validation_layer = "VK_LAYER_KHRONOS_validation";
 
-// --- What the renderer needs from a GPU --------------------------------------
+    // What the renderer needs from a GPU
 
-// Device creation doesn't need VK_KHR_shader_untyped_pointers, but shaders
-// that index the descriptor heap compile to SPIR-V untyped pointers.
-constexpr std::array device_extensions{
-    vk::KHRSwapchainExtensionName,
-    vk::EXTDescriptorHeapExtensionName,
-    vk::KHRShaderUntypedPointersExtensionName,
-};
+    // Device creation doesn't need VK_KHR_shader_untyped_pointers, but shaders that index the descriptor heap compile to SPIR-V untyped pointers.
+    constexpr std::array device_extensions{
+        vk::KHRSwapchainExtensionName,
+        vk::EXTDescriptorHeapExtensionName,
+        vk::KHRShaderUntypedPointersExtensionName,
+    };
 
-// Every feature struct we read in pick_gpu() and write in create_device(),
-// linked through pNext by StructureChain.
-using Features = vk::StructureChain<
-    vk::PhysicalDeviceFeatures2,
-    vk::PhysicalDeviceVulkan12Features,
-    vk::PhysicalDeviceVulkan13Features,
-    vk::PhysicalDeviceDescriptorHeapFeaturesEXT,
-    vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR
->;
-
-// --- Helpers -----------------------------------------------------------------
-
-VKAPI_ATTR vk::Bool32 VKAPI_CALL on_validation_message(
-    vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-    vk::DebugUtilsMessageTypeFlagsEXT /*types*/,
-    const vk::DebugUtilsMessengerCallbackDataEXT *data,
-    void* /*user_data*/
-) {
-    std::println(stderr, "[validation {}] {}", vk::to_string(severity), data->pMessage);
-    return vk::False;
-}
-
-int rank(vk::PhysicalDeviceType type) {
-    switch (type) {
-        case vk::PhysicalDeviceType::eDiscreteGpu: return 3;
-        case vk::PhysicalDeviceType::eIntegratedGpu: return 2;
-        case vk::PhysicalDeviceType::eVirtualGpu: return 1;
-        default: return 0;
-    }
-}
-
-bool has_extensions(const vk::raii::PhysicalDevice &device) {
-    const std::vector<vk::ExtensionProperties> available = device.enumerateDeviceExtensionProperties();
-
-    return std::ranges::all_of(device_extensions, [&](std::string_view name) {
-        return std::ranges::any_of(available, [&](const vk::ExtensionProperties &extension) {
-            return name == extension.extensionName.data();
-        });
-    });
-}
-
-// Only valid once has_extensions() is true: the extension structs in the
-// chain may not be queried on a device that lacks their extension.
-bool has_features(const vk::raii::PhysicalDevice &device) {
-    const Features supported = device.getFeatures2<
+    // Every feature struct we read in pick_gpu() and write in create_device(), linked through pNext by StructureChain.
+    using Features = vk::StructureChain<
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan12Features,
         vk::PhysicalDeviceVulkan13Features,
         vk::PhysicalDeviceDescriptorHeapFeaturesEXT,
         vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR
-    >();
+    >;
 
-    const auto &vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
-    const auto &vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
+    // Helpers
 
-    return supported.get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy
-        && vulkan12.bufferDeviceAddress
-        && vulkan12.scalarBlockLayout
-        && vulkan13.synchronization2
-        && vulkan13.dynamicRendering
-        && supported.get<vk::PhysicalDeviceDescriptorHeapFeaturesEXT>().descriptorHeap
-        && supported.get<vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR>().shaderUntypedPointers;
-}
+    VKAPI_ATTR vk::Bool32 VKAPI_CALL on_validation_message(
+        vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
+        vk::DebugUtilsMessageTypeFlagsEXT,
+        const vk::DebugUtilsMessengerCallbackDataEXT *data,
+        void*
+    ) {
+        std::println(stderr, "[validation {}] {}", vk::to_string(severity), data->pMessage);
+        return vk::False;
+    }
+
+    int rank(vk::PhysicalDeviceType type) {
+        switch (type) {
+            case vk::PhysicalDeviceType::eDiscreteGpu: return 3;
+            case vk::PhysicalDeviceType::eIntegratedGpu: return 2;
+            case vk::PhysicalDeviceType::eVirtualGpu: return 1;
+            default: return 0;
+        }
+    }
+
+    bool has_extensions(const vk::raii::PhysicalDevice &device) {
+        const std::vector<vk::ExtensionProperties> available = device.enumerateDeviceExtensionProperties();
+
+        return std::ranges::all_of(device_extensions, [&](std::string_view name) {
+            return std::ranges::any_of(available, [&](const vk::ExtensionProperties &extension) {
+                return name == extension.extensionName.data();
+            });
+        });
+    }
+
+    // Only valid once has_extensions() is true: the extension structs in the chain may not be queried on a device that lacks their extension.
+    bool has_features(const vk::raii::PhysicalDevice &device) {
+        const Features supported = device.getFeatures2<
+            vk::PhysicalDeviceFeatures2,
+            vk::PhysicalDeviceVulkan12Features,
+            vk::PhysicalDeviceVulkan13Features,
+            vk::PhysicalDeviceDescriptorHeapFeaturesEXT,
+            vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR
+        >();
+
+        const auto &vulkan12 = supported.get<vk::PhysicalDeviceVulkan12Features>();
+        const auto &vulkan13 = supported.get<vk::PhysicalDeviceVulkan13Features>();
+
+        return supported.get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy
+            && vulkan12.bufferDeviceAddress
+            && vulkan12.scalarBlockLayout
+            && vulkan13.synchronization2
+            && vulkan13.dynamicRendering
+            && supported.get<vk::PhysicalDeviceDescriptorHeapFeaturesEXT>().descriptorHeap
+            && supported.get<vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR>().shaderUntypedPointers;
+    }
 
 }  // namespace
 
-// --- Instance ----------------------------------------------------------------
+// Instance
 
 bool validation_layer_available(const vk::raii::Context &context) {
     return std::ranges::any_of(context.enumerateInstanceLayerProperties(), [](const vk::LayerProperties &layer) {
@@ -605,8 +593,7 @@ vk::raii::Instance create_instance(
         enabled_extensions.push_back(vk::EXTDebugUtilsExtensionName);
     }
 
-    // apiVersion is the newest Vulkan the app will use. Each GPU reports its
-    // own version, which pick_gpu() checks.
+    // apiVersion is the newest Vulkan the app will use. Each GPU reports its own version, which pick_gpu() checks.
     const vk::ApplicationInfo app_info{
         .pApplicationName = "game-engine",
         .applicationVersion = vk::makeApiVersion(0, 1, 0, 0),
@@ -650,7 +637,7 @@ vk::raii::SurfaceKHR create_surface(const vk::raii::Instance &instance, SDL_Wind
     return vk::raii::SurfaceKHR(instance, surface);
 }
 
-// --- Picking a GPU -----------------------------------------------------------
+// Picking a GPU
 
 std::optional<GpuChoice> pick_gpu(const vk::raii::Instance &instance, const vk::raii::SurfaceKHR &surface) {
     std::optional<GpuChoice> best;
@@ -702,7 +689,7 @@ std::optional<GpuChoice> pick_gpu(const vk::raii::Instance &instance, const vk::
     return best;
 }
 
-// --- Logical device ----------------------------------------------------------
+// Logical device
 
 vk::raii::Device create_device(const GpuChoice &gpu) {
     const float priority = 1.0f;
@@ -713,8 +700,7 @@ vk::raii::Device create_device(const GpuChoice &gpu) {
         .pQueuePriorities = &priority,
     };
 
-    // StructureChain fills in each struct's pNext, so the order here is the
-    // order of the chain. Features2 at the head stands in for pEnabledFeatures.
+    // StructureChain fills in each struct's pNext, so the order here is the order of the chain. Features2 at the head stands in for pEnabledFeatures.
     const Features features{
         vk::PhysicalDeviceFeatures2{
             .features = {.samplerAnisotropy = vk::True},  // sharper textures seen at an angle
@@ -746,7 +732,7 @@ vk::raii::Device create_device(const GpuChoice &gpu) {
     return vk::raii::Device(gpu.device, create_info);
 }
 
-// --- Descriptor heap limits --------------------------------------------------
+// Descriptor heap limits
 
 void print_descriptor_heap_properties(const GpuChoice &gpu) {
     const auto properties = gpu.device.getProperties2<
@@ -788,9 +774,7 @@ We never draw into the window directly. The **swapchain** is a small set of imag
 
 #include <vector>
 
-// The window's images, plus what we need per image to draw into them.
-// Members are destroyed bottom-up, so the views and semaphores go before
-// the swapchain that owns the images.
+// The window's images, plus what we need per image to draw into them. Members are destroyed bottom-up, so the views and semaphores go before the swapchain that owns the images.
 struct Swapchain {
     vk::raii::SwapchainKHR handle = nullptr;
     vk::Format format = vk::Format::eUndefined;
@@ -812,8 +796,7 @@ Swapchain create_swapchain(
     SDL_Window *window
 );
 
-// Rebuilds `swapchain` for the window's current size (after a resize).
-// Waits for the GPU to go idle first.
+// Rebuilds `swapchain` for the window's current size (after a resize). Waits for the GPU to go idle first.
 void recreate_swapchain(
     Swapchain &swapchain,
     const vk::raii::Device &device,
@@ -832,111 +815,109 @@ void recreate_swapchain(
 
 namespace {
 
-// --- Choosing the swapchain's settings ---------------------------------------
+    // Choosing the swapchain's settings
 
-vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR> &formats) {
-    // 8-bit BGRA with sRGB encoding: shaders write linear colors and the GPU
-    // encodes them to sRGB on the way out. Otherwise take what the surface offers.
-    for (const vk::SurfaceFormatKHR &format : formats) {
-        if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-            return format;
+    vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR> &formats) {
+        // 8-bit BGRA with sRGB encoding: shaders write linear colors and the GPU encodes them to sRGB on the way out. Otherwise take what the surface offers.
+        for (const vk::SurfaceFormatKHR &format : formats) {
+            if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+                return format;
+            }
         }
+
+        return formats.front();
     }
 
-    return formats.front();
-}
-
-vk::Extent2D choose_extent(const vk::SurfaceCapabilitiesKHR &capabilities, int width, int height) {
-    // Most platforms dictate the size. Wayland reports 0xFFFFFFFF and lets us pick.
-    if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
-        return capabilities.currentExtent;
-    }
-
-    return {
-        std::clamp(static_cast<std::uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-        std::clamp(static_cast<std::uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
-    };
-}
-
-vk::CompositeAlphaFlagBitsKHR choose_composite_alpha(vk::CompositeAlphaFlagsKHR supported) {
-    for (auto mode : {vk::CompositeAlphaFlagBitsKHR::eOpaque, vk::CompositeAlphaFlagBitsKHR::eInherit,
-                      vk::CompositeAlphaFlagBitsKHR::ePreMultiplied, vk::CompositeAlphaFlagBitsKHR::ePostMultiplied}) {
-        if (supported & mode) {
-            return mode;
+    vk::Extent2D choose_extent(const vk::SurfaceCapabilitiesKHR &capabilities, int width, int height) {
+        // Most platforms dictate the size. Wayland reports 0xFFFFFFFF and lets us pick.
+        if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
+            return capabilities.currentExtent;
         }
+
+        return {
+            std::clamp(static_cast<std::uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+            std::clamp(static_cast<std::uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+        };
     }
 
-    return vk::CompositeAlphaFlagBitsKHR::eOpaque;
-}
+    vk::CompositeAlphaFlagBitsKHR choose_composite_alpha(vk::CompositeAlphaFlagsKHR supported) {
+        for (auto mode : {vk::CompositeAlphaFlagBitsKHR::eOpaque, vk::CompositeAlphaFlagBitsKHR::eInherit,
+                          vk::CompositeAlphaFlagBitsKHR::ePreMultiplied, vk::CompositeAlphaFlagBitsKHR::ePostMultiplied}) {
+            if (supported & mode) {
+                return mode;
+            }
+        }
 
-// --- Building one ------------------------------------------------------------
-
-Swapchain build(
-    const vk::raii::Device &device,
-    const GpuChoice &gpu,
-    const vk::raii::SurfaceKHR &surface,
-    SDL_Window *window,
-    vk::SwapchainKHR old_swapchain
-) {
-    Swapchain swapchain;
-    SDL_GetWindowSizeInPixels(window, &swapchain.window_width, &swapchain.window_height);
-
-    const auto capabilities = gpu.device.getSurfaceCapabilitiesKHR(*surface);
-    const auto format = choose_format(gpu.device.getSurfaceFormatsKHR(*surface));
-
-    swapchain.format = format.format;
-    swapchain.extent = choose_extent(capabilities, swapchain.window_width, swapchain.window_height);
-
-    // One more than the minimum, so we rarely wait on the driver for an image.
-    // A maxImageCount of 0 means no limit.
-    std::uint32_t image_count = capabilities.minImageCount + 1;
-    if (capabilities.maxImageCount > 0) {
-        image_count = std::min(image_count, capabilities.maxImageCount);
+        return vk::CompositeAlphaFlagBitsKHR::eOpaque;
     }
 
-    const vk::SwapchainCreateInfoKHR create_info{
-        .surface = *surface,
-        .minImageCount = image_count,
-        .imageFormat = format.format,
-        .imageColorSpace = format.colorSpace,
-        .imageExtent = swapchain.extent,
-        .imageArrayLayers = 1,
-        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
-        .imageSharingMode = vk::SharingMode::eExclusive,
-        .preTransform = capabilities.currentTransform,
-        .compositeAlpha = choose_composite_alpha(capabilities.supportedCompositeAlpha),
-        .presentMode = vk::PresentModeKHR::eFifo,  // vsync; the only mode every driver must support
-        .clipped = vk::True,
-        .oldSwapchain = old_swapchain,              // lets the driver reuse resources on resize
-    };
+    // Building one
 
-    swapchain.handle = vk::raii::SwapchainKHR(device, create_info);
-    swapchain.images = swapchain.handle.getImages();
+    Swapchain build(
+        const vk::raii::Device &device,
+        const GpuChoice &gpu,
+        const vk::raii::SurfaceKHR &surface,
+        SDL_Window *window,
+        vk::SwapchainKHR old_swapchain
+    ) {
+        Swapchain swapchain;
+        SDL_GetWindowSizeInPixels(window, &swapchain.window_width, &swapchain.window_height);
 
-    for (vk::Image image : swapchain.images) {
-        const vk::ImageViewCreateInfo view_info{
-            .image = image,
-            .viewType = vk::ImageViewType::e2D,
-            .format = swapchain.format,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
+        const auto capabilities = gpu.device.getSurfaceCapabilitiesKHR(*surface);
+        const auto format = choose_format(gpu.device.getSurfaceFormatsKHR(*surface));
+
+        swapchain.format = format.format;
+        swapchain.extent = choose_extent(capabilities, swapchain.window_width, swapchain.window_height);
+
+        // One more than the minimum, so we rarely wait on the driver for an image. A maxImageCount of 0 means no limit.
+        std::uint32_t image_count = capabilities.minImageCount + 1;
+        if (capabilities.maxImageCount > 0) {
+            image_count = std::min(image_count, capabilities.maxImageCount);
+        }
+
+        const vk::SwapchainCreateInfoKHR create_info{
+            .surface = *surface,
+            .minImageCount = image_count,
+            .imageFormat = format.format,
+            .imageColorSpace = format.colorSpace,
+            .imageExtent = swapchain.extent,
+            .imageArrayLayers = 1,
+            .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+            .imageSharingMode = vk::SharingMode::eExclusive,
+            .preTransform = capabilities.currentTransform,
+            .compositeAlpha = choose_composite_alpha(capabilities.supportedCompositeAlpha),
+            .presentMode = vk::PresentModeKHR::eFifo,  // vsync; the only mode every driver must support
+            .clipped = vk::True,
+            .oldSwapchain = old_swapchain,              // lets the driver reuse resources on resize
         };
 
-        swapchain.views.emplace_back(device, view_info);
-        swapchain.rendered.emplace_back(device, vk::SemaphoreCreateInfo{});
-    }
+        swapchain.handle = vk::raii::SwapchainKHR(device, create_info);
+        swapchain.images = swapchain.handle.getImages();
 
-    return swapchain;
-}
+        for (vk::Image image : swapchain.images) {
+            const vk::ImageViewCreateInfo view_info{
+                .image = image,
+                .viewType = vk::ImageViewType::e2D,
+                .format = swapchain.format,
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            };
+
+            swapchain.views.emplace_back(device, view_info);
+            swapchain.rendered.emplace_back(device, vk::SemaphoreCreateInfo{});
+        }
+
+        return swapchain;
+    }
 
 }  // namespace
 
-// --- Create and recreate -----------------------------------------------------
+// Create and recreate
 
 Swapchain create_swapchain(
     const vk::raii::Device &device,
@@ -959,8 +940,7 @@ void recreate_swapchain(
 
     Swapchain next = build(device, gpu, surface, window, *swapchain.handle);
 
-    // Destroy the old views and semaphores while their images still exist,
-    // then the old swapchain itself.
+    // Destroy the old views and semaphores while their images still exist, then the old swapchain itself.
     swapchain.views.clear();
     swapchain.rendered.clear();
     swapchain = std::move(next);
@@ -1005,128 +985,128 @@ The GPU runs on its own timeline. We *record* commands into a command buffer, *s
 
 namespace {
 
-// --- Frames in flight --------------------------------------------------------
+    // Frames in flight
 
-// How many frames the CPU may record ahead of the GPU.
-constexpr std::size_t frames_in_flight = 2;
+    // How many frames the CPU may record ahead of the GPU.
+    constexpr std::size_t frames_in_flight = 2;
 
-constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
+    constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
 
-// What each in-flight frame needs for itself.
-struct Frame {
-    vk::raii::CommandBuffer commands = nullptr;
-    vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
-    vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
-};
-
-// --- Recording a frame -------------------------------------------------------
-
-// Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
-void transition(
-    const vk::raii::CommandBuffer &commands,
-    vk::Image image,
-    vk::ImageLayout from,
-    vk::ImageLayout to,
-    vk::PipelineStageFlags2 src_stage,
-    vk::AccessFlags2 src_access,
-    vk::PipelineStageFlags2 dst_stage,
-    vk::AccessFlags2 dst_access
-) {
-    const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-        .oldLayout = from,
-        .newLayout = to,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = image,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+    // What each in-flight frame needs for itself.
+    struct Frame {
+        vk::raii::CommandBuffer commands = nullptr;
+        vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
+        vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     };
 
-    commands.pipelineBarrier2(vk::DependencyInfo{
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier,
-    });
-}
+    // Recording a frame
 
-// Records: swapchain image -> clear to `color` -> ready to present.
-void record_frame(
-    const vk::raii::CommandBuffer &commands,
-    const Swapchain &swapchain,
-    std::uint32_t image_index,
-    std::array<float, 4> color
-) {
-    const vk::Image image = swapchain.images[image_index];
+    // Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
+    void transition(
+        const vk::raii::CommandBuffer &commands,
+        vk::Image image,
+        vk::ImageLayout from,
+        vk::ImageLayout to,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access
+    ) {
+        const vk::ImageMemoryBarrier2 barrier{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = image,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
 
-    commands.reset();
-    commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-
-    // Undefined: we don't care what was in the image, we're about to clear it.
-    transition(commands, image,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-    );
-
-    // loadOp eClear does the clearing when rendering begins.
-    const vk::RenderingAttachmentInfo color_attachment{
-        .imageView = *swapchain.views[image_index],
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
-    };
-
-    commands.beginRendering(vk::RenderingInfo{
-        .renderArea = {.offset = {0, 0}, .extent = swapchain.extent},
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment,
-    });
-
-    // Draw calls go here.
-
-    commands.endRendering();
-
-    transition(commands, image,
-        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
-    );
-
-    commands.end();
-}
-
-// --- Events ------------------------------------------------------------------
-
-// Handles every pending event. False once the window was closed or Escape pressed.
-bool poll_events() {
-    SDL_Event event;
-
-    while (SDL_PollEvent(&event)) {
-        const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
-
-        if (event.type == SDL_EVENT_QUIT || escape) {
-            return false;
-        }
+        commands.pipelineBarrier2(vk::DependencyInfo{
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &barrier,
+        });
     }
 
-    return true;
-}
+    // Records: swapchain image -> clear to `color` -> ready to present.
+    void record_frame(
+        const vk::raii::CommandBuffer &commands,
+        const Swapchain &swapchain,
+        std::uint32_t image_index,
+        std::array<float, 4> color
+    ) {
+        const vk::Image image = swapchain.images[image_index];
+
+        commands.reset();
+        commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
+        // Undefined: we don't care what was in the image, we're about to clear it.
+        transition(commands, image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
+        );
+
+        // loadOp eClear does the clearing when rendering begins.
+        const vk::RenderingAttachmentInfo color_attachment{
+            .imageView = *swapchain.views[image_index],
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
+        };
+
+        commands.beginRendering(vk::RenderingInfo{
+            .renderArea = {.offset = {0, 0}, .extent = swapchain.extent},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &color_attachment,
+        });
+
+        // Draw calls go here.
+
+        commands.endRendering();
+
+        transition(commands, image,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
+        );
+
+        commands.end();
+    }
+
+    // Events
+
+    // Handles every pending event. False once the window was closed or Escape pressed.
+    bool poll_events() {
+        SDL_Event event;
+
+        while (SDL_PollEvent(&event)) {
+            const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
+
+            if (event.type == SDL_EVENT_QUIT || escape) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
 }  // namespace
 
 int main() {
     try {
-        // --- Window and instance ---------------------------------------------
+        // Window and instance
 
         SdlContext sdl;
         const int version = SDL_GetVersion();
@@ -1143,9 +1123,7 @@ int main() {
 #endif
         std::println("Validation layer {}", validation ? "on" : "off");
 
-        // Declaration order matters: each object is destroyed before the ones above it.
-        // The window comes first: creating it loads Vulkan into SDL, which
-        // required_vulkan_extensions() needs.
+        // Declaration order matters: each object is destroyed before the ones above it. The window comes first: creating it loads Vulkan into SDL, which required_vulkan_extensions() needs.
         Window window = make_vulkan_window(1920, 1080, "game-engine", true);
 
         vk::raii::Instance instance = create_instance(context, SdlContext::required_vulkan_extensions(), validation);
@@ -1155,7 +1133,7 @@ int main() {
 
         vk::raii::SurfaceKHR surface = create_surface(instance, window.get());
 
-        // --- GPU, device and swapchain ---------------------------------------
+        // GPU, device and swapchain
 
         std::println("GPUs:");
         std::optional<GpuChoice> gpu = pick_gpu(instance, surface);
@@ -1172,7 +1150,7 @@ int main() {
         vk::raii::Queue queue = device.getQueue(gpu->queue_family, 0);
         Swapchain swapchain = create_swapchain(device, *gpu, surface, window.get());
 
-        // --- Per-frame resources ---------------------------------------------
+        // Per-frame resources
 
         // eResetCommandBuffer lets us re-record each frame's command buffer.
         vk::raii::CommandPool command_pool(device, vk::CommandPoolCreateInfo{
@@ -1196,7 +1174,7 @@ int main() {
             });
         }
 
-        // --- Frame loop ------------------------------------------------------
+        // Frame loop
 
         const std::array black{0.0f, 0.0f, 0.0f, 1.0f};
         std::uint64_t frame_count = 0;
@@ -1273,7 +1251,7 @@ int main() {
             ++frame_count;
         }
 
-        // --- Shutdown --------------------------------------------------------
+        // Shutdown
 
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();

@@ -29,10 +29,9 @@ mkdir -p game-engine/shaders
 
 `game-engine/shaders/triangle.slang`:
 ```slang
-// A triangle whose corners are baked into the shader, so nothing has to be
-// uploaded yet: the vertex index (0, 1, 2) picks the corner.
+// A triangle whose corners are baked into the shader, so nothing has to be uploaded yet: the vertex index (0, 1, 2) picks the corner.
 
-// --- Data --------------------------------------------------------------------
+// Data
 
 // Vulkan clip space: x and y run from -1 to 1, with +y pointing down.
 static const float2 positions[3] = {
@@ -47,17 +46,15 @@ static const float3 colors[3] = {
     float3(0.0, 0.0, 1.0),
 };
 
-// What the vertex shader hands to the rasterizer. SV_Position is the
-// clip-space position; every other field is interpolated across the triangle.
+// What the vertex shader hands to the rasterizer. SV_Position is the clip-space position; every other field is interpolated across the triangle.
 struct VertexOutput {
     float4 position : SV_Position;
     float3 color : COLOR;
 };
 
-// --- Vertex shader -----------------------------------------------------------
+// Vertex shader
 
-// SV_VulkanVertexID is Vulkan's own gl_VertexIndex. HLSL's SV_VertexID would
-// subtract the draw's base vertex, which needs the DrawParameters capability.
+// SV_VulkanVertexID is Vulkan's own gl_VertexIndex. HLSL's SV_VertexID would subtract the draw's base vertex, which needs the DrawParameters capability.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     VertexOutput output;
@@ -66,7 +63,7 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     return output;
 }
 
-// --- Fragment shader ---------------------------------------------------------
+// Fragment shader
 
 // SV_Target: the value written to color attachment 0.
 [shader("fragment")]
@@ -165,8 +162,7 @@ Normally a pipeline also needs a `VkPipelineLayout`, which declares the descript
 // A .spv file as the 32-bit words SPIR-V is made of.
 std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path);
 
-// Draws shaders/triangle.slang into a `color_format` image. There is no
-// pipeline layout: shaders will find their resources in the descriptor heap.
+// Draws shaders/triangle.slang into a `color_format` image. There is no pipeline layout: shaders will find their resources in the descriptor heap.
 vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device &device, vk::Format color_format);
 ```
 
@@ -178,7 +174,7 @@ vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device &device, vk::
 #include <fstream>
 #include <stdexcept>
 
-// --- Loading SPIR-V ----------------------------------------------------------
+// Loading SPIR-V
 
 std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path) {
     std::ifstream file(path, std::ios::binary);
@@ -204,11 +200,10 @@ std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path) {
     return words;
 }
 
-// --- The triangle pipeline ---------------------------------------------------
+// The triangle pipeline
 
 vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device &device, vk::Format color_format) {
-    // Shaders: one module, two entry points picked by name. The module is
-    // only needed while the pipeline is built, so it's destroyed on return.
+    // Shaders: one module, two entry points picked by name. The module is only needed while the pipeline is built, so it's destroyed on return.
     const std::vector<std::uint32_t> spirv = read_spirv(std::filesystem::path(SHADER_DIR) / "triangle.spv");
 
     const vk::raii::ShaderModule module(device, vk::ShaderModuleCreateInfo{
@@ -229,16 +224,14 @@ vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device &device, vk::
         },
     };
 
-    // Vertex input and assembly: no vertex buffers, the vertex shader makes
-    // its corners from SV_VulkanVertexID. Every 3 vertices form a triangle.
+    // Vertex input and assembly: no vertex buffers, the vertex shader makes its corners from SV_VulkanVertexID. Every 3 vertices form a triangle.
     const vk::PipelineVertexInputStateCreateInfo vertex_input{};
 
     const vk::PipelineInputAssemblyStateCreateInfo input_assembly{
         .topology = vk::PrimitiveTopology::eTriangleList,
     };
 
-    // Viewport: counts only. The viewport and scissor rectangles are set
-    // while recording, so a resized window doesn't need a new pipeline.
+    // Viewport: counts only. The viewport and scissor rectangles are set while recording, so a resized window doesn't need a new pipeline.
     const vk::PipelineViewportStateCreateInfo viewport{
         .viewportCount = 1,
         .scissorCount = 1,
@@ -274,23 +267,19 @@ vk::raii::Pipeline create_triangle_pipeline(const vk::raii::Device &device, vk::
         .pAttachments = &blend_attachment,
     };
 
-    // Dynamic rendering: instead of a VkRenderPass, the pipeline names the
-    // format of the image it will draw into.
+    // Dynamic rendering: instead of a VkRenderPass, the pipeline names the format of the image it will draw into.
     const vk::PipelineRenderingCreateInfo rendering{
         .colorAttachmentCount = 1,
         .pColorAttachmentFormats = &color_format,
     };
 
-    // Descriptor heap mode is what makes `layout = nullptr` legal: shaders
-    // will reach resources through the heap and push data, not descriptor
-    // sets and push constants declared in a VkPipelineLayout.
+    // Descriptor heap mode is what makes `layout = nullptr` legal: shaders will reach resources through the heap and push data, not descriptor sets and push constants declared in a VkPipelineLayout.
     const vk::PipelineCreateFlags2CreateInfo flags{
         .pNext = &rendering,
         .flags = vk::PipelineCreateFlagBits2::eDescriptorHeapEXT,
     };
 
-    // pNext chain: create info -> flags -> rendering. Everything it points at
-    // lives until the end of this function, past the pipeline's creation.
+    // pNext chain: create info -> flags -> rendering. Everything it points at lives until the end of this function, past the pipeline's creation.
     return vk::raii::Pipeline(device, nullptr, vk::GraphicsPipelineCreateInfo{
         .pNext = &flags,
         .stageCount = static_cast<std::uint32_t>(stages.size()),
@@ -396,10 +385,9 @@ void record_frame(
 
 **3.** In `main`, directly after `Swapchain swapchain = create_swapchain(...);`, add a new section:
 ```cpp
-        // --- Pipelines -------------------------------------------------------
+        // Pipelines
 
-        // Built for swapchain.format. recreate_swapchain() picks the same
-        // format again, so the pipeline stays valid across resizes.
+        // Built for swapchain.format. recreate_swapchain() picks the same format again, so the pipeline stays valid across resizes.
         vk::raii::Pipeline pipeline = create_triangle_pipeline(device, swapchain.format);
 ```
 

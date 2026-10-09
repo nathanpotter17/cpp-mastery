@@ -74,15 +74,11 @@ mv game-engine/shaders/triangle.slang game-engine/shaders/mesh.slang
 
 #include <cstddef>
 
-// C++ mirrors of the structs in shaders/mesh.slang. The GPU reads these
-// bytes as they are, so the two sides must agree on every size and offset;
-// the static_asserts catch a mismatch at compile time.
+// C++ mirrors of the structs in shaders/mesh.slang. The GPU reads these bytes as they are, so the two sides must agree on every size and offset; the static_asserts catch a mismatch at compile time.
 
-// --- Vertex ------------------------------------------------------------------
+// Vertex
 
-// Slang lays out data behind a pointer like C: a float3 is 12 bytes, with no
-// padding, so position is at byte 0, color at byte 12, and a vertex is 24.
-// glm::vec3 is exactly three floats.
+// Slang lays out data behind a pointer like C: a float3 is 12 bytes, with no padding, so position is at byte 0, color at byte 12, and a vertex is 24. glm::vec3 is exactly three floats.
 struct Vertex {
     glm::vec3 position;
     glm::vec3 color;
@@ -91,11 +87,9 @@ struct Vertex {
 static_assert(sizeof(Vertex) == 24);
 static_assert(offsetof(Vertex, color) == 12);
 
-// --- Push data ---------------------------------------------------------------
+// Push data
 
-// Written with vkCmdPushDataEXT before each draw. The push block uses std430
-// rules: each float4x4 is 64 bytes, and the matrices come first so the
-// 8-byte pointer lands at 128 without padding.
+// Written with vkCmdPushDataEXT before each draw. The push block uses std430 rules: each float4x4 is 64 bytes, and the matrices come first so the 8-byte pointer lands at 128 without padding.
 struct PushData {
     glm::mat4 view_projection;   // world space -> clip space, the same for every draw
     glm::mat4 model;             // this object's space -> world space
@@ -109,13 +103,11 @@ static_assert(sizeof(PushData) == 136);
 
 `game-engine/shaders/mesh.slang`:
 ```slang
-// Draws a mesh whose vertices live in a GPU buffer, placed in the world by a
-// model matrix and seen through a camera's view-projection matrix.
+// Draws a mesh whose vertices live in a GPU buffer, placed in the world by a model matrix and seen through a camera's view-projection matrix.
 
-// --- Data shared with C++ (src/includes/shader_types.h) ----------------------
+// Data shared with C++ (src/includes/shader_types.h)
 
-// Data behind a pointer is laid out like C: a float3 is 12 bytes and nothing
-// is padded, so this matches the C++ Vertex exactly (24 bytes).
+// Data behind a pointer is laid out like C: a float3 is 12 bytes and nothing is padded, so this matches the C++ Vertex exactly (24 bytes).
 struct Vertex {
     float3 position;
     float3 color;
@@ -132,25 +124,22 @@ struct PushData {
 [[vk::push_constant]]
 ConstantBuffer<PushData> push;
 
-// --- Stage interface ---------------------------------------------------------
+// Stage interface
 
-// What the vertex shader hands to the rasterizer. SV_Position is the
-// clip-space position; every other field is interpolated across the triangle.
+// What the vertex shader hands to the rasterizer. SV_Position is the clip-space position; every other field is interpolated across the triangle.
 struct VertexOutput {
     float4 position : SV_Position;
     float3 color : COLOR;
 };
 
-// --- Vertex shader -----------------------------------------------------------
+// Vertex shader
 
-// SV_VulkanVertexID is Vulkan's own gl_VertexIndex. HLSL's SV_VertexID would
-// subtract the draw's base vertex, which needs the DrawParameters capability.
+// SV_VulkanVertexID is Vulkan's own gl_VertexIndex. HLSL's SV_VertexID would subtract the draw's base vertex, which needs the DrawParameters capability.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     const Vertex vertex = push.vertices[vertex_id];
 
-    // mul(M, v) treats v as a column vector, the same as glm's M * v.
-    // Read right to left: object space -> world space -> clip space.
+    // mul(M, v) treats v as a column vector, the same as glm's M * v. Read right to left: object space -> world space -> clip space.
     const float4 world = mul(push.model, float4(vertex.position, 1.0));
 
     VertexOutput output;
@@ -159,7 +148,7 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     return output;
 }
 
-// --- Fragment shader ---------------------------------------------------------
+// Fragment shader
 
 // SV_Target: the value written to color attachment 0.
 [shader("fragment")]
@@ -205,14 +194,11 @@ Chapter 5's textures will use the same helper.
 - **The depth buffer belongs to the `Swapchain`,** because it must always match the swapchain images' size. `build()` creates it, so resizing the window rebuilds it with everything else.
 
 ### Code
-In `game-engine/src/buffer.cpp`, make `find_memory_type` public. Delete the `namespace {` line above it and the `}  // namespace` line below it, along with its comment, which moves to the header. Then, in `game-engine/src/includes/buffer.h`, add `#include <cstdint>` to the includes, and this section before `// --- Creating buffers`:
+In `game-engine/src/buffer.cpp`, make `find_memory_type` public. Delete the `namespace {` line above it and the `}  // namespace` line below it, take the function out one level, and delete its comment, which moves to the header. Then, in `game-engine/src/includes/buffer.h`, add `#include <cstdint>` to the includes, and this section before `// Creating buffers`:
 ```cpp
-// --- Memory types ------------------------------------------------------------
+// Memory types
 
-// The GPU offers a few memory types, each a set of properties (device-local,
-// host-visible, ...) in one of its heaps. `allowed` is the bitmask a buffer's
-// or image's memory requirements permit; this returns the first allowed type
-// that has every property in `required`.
+// The GPU offers a few memory types, each a set of properties (device-local, host-visible, ...) in one of its heaps. `allowed` is the bitmask a buffer's or image's memory requirements permit; this returns the first allowed type that has every property in `required`.
 std::uint32_t find_memory_type(const GpuChoice &gpu, std::uint32_t allowed, vk::MemoryPropertyFlags required);
 ```
 
@@ -222,8 +208,7 @@ std::uint32_t find_memory_type(const GpuChoice &gpu, std::uint32_t allowed, vk::
 
 #include "includes/vulkan_setup.h"
 
-// A VkImage, the memory behind it, and a view of the whole image. Members are
-// destroyed bottom-up: the view, then the image, then its memory.
+// A VkImage, the memory behind it, and a view of the whole image. Members are destroyed bottom-up: the view, then the image, then its memory.
 struct Image {
     vk::raii::DeviceMemory memory = nullptr;
     vk::raii::Image handle = nullptr;
@@ -232,8 +217,7 @@ struct Image {
     vk::Extent2D extent;
 };
 
-// A 2D image in device-local memory, with one mip level, and a view of its
-// `aspect` (color, or depth for a depth buffer).
+// A 2D image in device-local memory, with one mip level, and a view of its `aspect` (color, or depth for a depth buffer).
 Image create_image(
     const vk::raii::Device &device,
     const GpuChoice &gpu,
@@ -327,9 +311,7 @@ Image create_image(
 // 32-bit float depth: the precision reverse-Z depth needs (see camera.cpp).
 constexpr vk::Format depth_format = vk::Format::eD32Sfloat;
 
-// The window's images, plus what we need per image to draw into them.
-// Members are destroyed bottom-up, so the views and semaphores go before
-// the swapchain that owns the images.
+// The window's images, plus what we need per image to draw into them. Members are destroyed bottom-up, so the views and semaphores go before the swapchain that owns the images.
 struct Swapchain {
     vk::raii::SwapchainKHR handle = nullptr;
     vk::Format format = vk::Format::eUndefined;
@@ -343,8 +325,7 @@ struct Swapchain {
     std::vector<vk::raii::ImageView> views;      // one per image
     std::vector<vk::raii::Semaphore> rendered;   // one per image, signalled when drawing is done
 
-    // One depth buffer, the size of the images. Every frame clears it before
-    // drawing, so frames in flight can share it.
+    // One depth buffer, the size of the images. Every frame clears it before drawing, so frames in flight can share it.
     Image depth;
 };
 
@@ -355,8 +336,7 @@ Swapchain create_swapchain(
     SDL_Window *window
 );
 
-// Rebuilds `swapchain` for the window's current size (after a resize).
-// Waits for the GPU to go idle first.
+// Rebuilds `swapchain` for the window's current size (after a resize). Waits for the GPU to go idle first.
 void recreate_swapchain(
     Swapchain &swapchain,
     const vk::raii::Device &device,
@@ -377,114 +357,112 @@ In `swapchain.cpp`, `build()` creates the depth buffer after the views and semap
 
 namespace {
 
-// --- Choosing the swapchain's settings ---------------------------------------
+    // Choosing the swapchain's settings
 
-vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR> &formats) {
-    // 8-bit BGRA with sRGB encoding: shaders write linear colors and the GPU
-    // encodes them to sRGB on the way out. Otherwise take what the surface offers.
-    for (const vk::SurfaceFormatKHR &format : formats) {
-        if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-            return format;
+    vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR> &formats) {
+        // 8-bit BGRA with sRGB encoding: shaders write linear colors and the GPU encodes them to sRGB on the way out. Otherwise take what the surface offers.
+        for (const vk::SurfaceFormatKHR &format : formats) {
+            if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+                return format;
+            }
         }
+
+        return formats.front();
     }
 
-    return formats.front();
-}
-
-vk::Extent2D choose_extent(const vk::SurfaceCapabilitiesKHR &capabilities, int width, int height) {
-    // Most platforms dictate the size. Wayland reports 0xFFFFFFFF and lets us pick.
-    if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
-        return capabilities.currentExtent;
-    }
-
-    return {
-        std::clamp(static_cast<std::uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-        std::clamp(static_cast<std::uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
-    };
-}
-
-vk::CompositeAlphaFlagBitsKHR choose_composite_alpha(vk::CompositeAlphaFlagsKHR supported) {
-    for (auto mode : {vk::CompositeAlphaFlagBitsKHR::eOpaque, vk::CompositeAlphaFlagBitsKHR::eInherit,
-                      vk::CompositeAlphaFlagBitsKHR::ePreMultiplied, vk::CompositeAlphaFlagBitsKHR::ePostMultiplied}) {
-        if (supported & mode) {
-            return mode;
+    vk::Extent2D choose_extent(const vk::SurfaceCapabilitiesKHR &capabilities, int width, int height) {
+        // Most platforms dictate the size. Wayland reports 0xFFFFFFFF and lets us pick.
+        if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
+            return capabilities.currentExtent;
         }
+
+        return {
+            std::clamp(static_cast<std::uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+            std::clamp(static_cast<std::uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+        };
     }
 
-    return vk::CompositeAlphaFlagBitsKHR::eOpaque;
-}
+    vk::CompositeAlphaFlagBitsKHR choose_composite_alpha(vk::CompositeAlphaFlagsKHR supported) {
+        for (auto mode : {vk::CompositeAlphaFlagBitsKHR::eOpaque, vk::CompositeAlphaFlagBitsKHR::eInherit,
+                          vk::CompositeAlphaFlagBitsKHR::ePreMultiplied, vk::CompositeAlphaFlagBitsKHR::ePostMultiplied}) {
+            if (supported & mode) {
+                return mode;
+            }
+        }
 
-// --- Building one ------------------------------------------------------------
-
-Swapchain build(
-    const vk::raii::Device &device,
-    const GpuChoice &gpu,
-    const vk::raii::SurfaceKHR &surface,
-    SDL_Window *window,
-    vk::SwapchainKHR old_swapchain
-) {
-    Swapchain swapchain;
-    SDL_GetWindowSizeInPixels(window, &swapchain.window_width, &swapchain.window_height);
-
-    const auto capabilities = gpu.device.getSurfaceCapabilitiesKHR(*surface);
-    const auto format = choose_format(gpu.device.getSurfaceFormatsKHR(*surface));
-
-    swapchain.format = format.format;
-    swapchain.extent = choose_extent(capabilities, swapchain.window_width, swapchain.window_height);
-
-    // One more than the minimum, so we rarely wait on the driver for an image.
-    // A maxImageCount of 0 means no limit.
-    std::uint32_t image_count = capabilities.minImageCount + 1;
-    if (capabilities.maxImageCount > 0) {
-        image_count = std::min(image_count, capabilities.maxImageCount);
+        return vk::CompositeAlphaFlagBitsKHR::eOpaque;
     }
 
-    const vk::SwapchainCreateInfoKHR create_info{
-        .surface = *surface,
-        .minImageCount = image_count,
-        .imageFormat = format.format,
-        .imageColorSpace = format.colorSpace,
-        .imageExtent = swapchain.extent,
-        .imageArrayLayers = 1,
-        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
-        .imageSharingMode = vk::SharingMode::eExclusive,
-        .preTransform = capabilities.currentTransform,
-        .compositeAlpha = choose_composite_alpha(capabilities.supportedCompositeAlpha),
-        .presentMode = vk::PresentModeKHR::eFifo,  // vsync; the only mode every driver must support
-        .clipped = vk::True,
-        .oldSwapchain = old_swapchain,              // lets the driver reuse resources on resize
-    };
+    // Building one
 
-    swapchain.handle = vk::raii::SwapchainKHR(device, create_info);
-    swapchain.images = swapchain.handle.getImages();
+    Swapchain build(
+        const vk::raii::Device &device,
+        const GpuChoice &gpu,
+        const vk::raii::SurfaceKHR &surface,
+        SDL_Window *window,
+        vk::SwapchainKHR old_swapchain
+    ) {
+        Swapchain swapchain;
+        SDL_GetWindowSizeInPixels(window, &swapchain.window_width, &swapchain.window_height);
 
-    for (vk::Image image : swapchain.images) {
-        const vk::ImageViewCreateInfo view_info{
-            .image = image,
-            .viewType = vk::ImageViewType::e2D,
-            .format = swapchain.format,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
+        const auto capabilities = gpu.device.getSurfaceCapabilitiesKHR(*surface);
+        const auto format = choose_format(gpu.device.getSurfaceFormatsKHR(*surface));
+
+        swapchain.format = format.format;
+        swapchain.extent = choose_extent(capabilities, swapchain.window_width, swapchain.window_height);
+
+        // One more than the minimum, so we rarely wait on the driver for an image. A maxImageCount of 0 means no limit.
+        std::uint32_t image_count = capabilities.minImageCount + 1;
+        if (capabilities.maxImageCount > 0) {
+            image_count = std::min(image_count, capabilities.maxImageCount);
+        }
+
+        const vk::SwapchainCreateInfoKHR create_info{
+            .surface = *surface,
+            .minImageCount = image_count,
+            .imageFormat = format.format,
+            .imageColorSpace = format.colorSpace,
+            .imageExtent = swapchain.extent,
+            .imageArrayLayers = 1,
+            .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+            .imageSharingMode = vk::SharingMode::eExclusive,
+            .preTransform = capabilities.currentTransform,
+            .compositeAlpha = choose_composite_alpha(capabilities.supportedCompositeAlpha),
+            .presentMode = vk::PresentModeKHR::eFifo,  // vsync; the only mode every driver must support
+            .clipped = vk::True,
+            .oldSwapchain = old_swapchain,              // lets the driver reuse resources on resize
         };
 
-        swapchain.views.emplace_back(device, view_info);
-        swapchain.rendered.emplace_back(device, vk::SemaphoreCreateInfo{});
+        swapchain.handle = vk::raii::SwapchainKHR(device, create_info);
+        swapchain.images = swapchain.handle.getImages();
+
+        for (vk::Image image : swapchain.images) {
+            const vk::ImageViewCreateInfo view_info{
+                .image = image,
+                .viewType = vk::ImageViewType::e2D,
+                .format = swapchain.format,
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            };
+
+            swapchain.views.emplace_back(device, view_info);
+            swapchain.rendered.emplace_back(device, vk::SemaphoreCreateInfo{});
+        }
+
+        swapchain.depth = create_image(device, gpu, swapchain.extent, depth_format,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::ImageAspectFlagBits::eDepth);
+
+        return swapchain;
     }
-
-    swapchain.depth = create_image(device, gpu, swapchain.extent, depth_format,
-        vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::ImageAspectFlagBits::eDepth);
-
-    return swapchain;
-}
 
 }  // namespace
 
-// --- Create and recreate -----------------------------------------------------
+// Create and recreate
 
 Swapchain create_swapchain(
     const vk::raii::Device &device,
@@ -507,8 +485,7 @@ void recreate_swapchain(
 
     Swapchain next = build(device, gpu, surface, window, *swapchain.handle);
 
-    // Destroy the old views and semaphores while their images still exist,
-    // then the old swapchain itself and its depth buffer.
+    // Destroy the old views and semaphores while their images still exist, then the old swapchain itself and its depth buffer.
     swapchain.views.clear();
     swapchain.rendered.clear();
     swapchain = std::move(next);
@@ -539,9 +516,7 @@ The depth buffer only does something if the pipeline uses it. The pipeline has t
 // A .spv file as the 32-bit words SPIR-V is made of.
 std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path);
 
-// Draws shaders/mesh.slang into a `color_format` image, depth-tested against
-// a `depth_format` depth buffer. There is no pipeline layout: shaders will
-// find their resources in the descriptor heap.
+// Draws shaders/mesh.slang into a `color_format` image, depth-tested against a `depth_format` depth buffer. There is no pipeline layout: shaders will find their resources in the descriptor heap.
 vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device &device, vk::Format color_format, vk::Format depth_format);
 ```
 
@@ -553,7 +528,7 @@ vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device &device, vk::Form
 #include <fstream>
 #include <stdexcept>
 
-// --- Loading SPIR-V ----------------------------------------------------------
+// Loading SPIR-V
 
 std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path) {
     std::ifstream file(path, std::ios::binary);
@@ -579,11 +554,10 @@ std::vector<std::uint32_t> read_spirv(const std::filesystem::path &path) {
     return words;
 }
 
-// --- The mesh pipeline -------------------------------------------------------
+// The mesh pipeline
 
 vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device &device, vk::Format color_format, vk::Format depth_format) {
-    // Shaders: one module, two entry points picked by name. The module is
-    // only needed while the pipeline is built, so it's destroyed on return.
+    // Shaders: one module, two entry points picked by name. The module is only needed while the pipeline is built, so it's destroyed on return.
     const std::vector<std::uint32_t> spirv = read_spirv(std::filesystem::path(SHADER_DIR) / "mesh.spv");
 
     const vk::raii::ShaderModule module(device, vk::ShaderModuleCreateInfo{
@@ -604,16 +578,14 @@ vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device &device, vk::Form
         },
     };
 
-    // Vertex input and assembly: no vertex attributes, the vertex shader reads
-    // its vertex through a pointer. Every 3 vertices form a triangle.
+    // Vertex input and assembly: no vertex attributes, the vertex shader reads its vertex through a pointer. Every 3 vertices form a triangle.
     const vk::PipelineVertexInputStateCreateInfo vertex_input{};
 
     const vk::PipelineInputAssemblyStateCreateInfo input_assembly{
         .topology = vk::PrimitiveTopology::eTriangleList,
     };
 
-    // Viewport: counts only. The viewport and scissor rectangles are set
-    // while recording, so a resized window doesn't need a new pipeline.
+    // Viewport: counts only. The viewport and scissor rectangles are set while recording, so a resized window doesn't need a new pipeline.
     const vk::PipelineViewportStateCreateInfo viewport{
         .viewportCount = 1,
         .scissorCount = 1,
@@ -638,9 +610,7 @@ vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device &device, vk::Form
         .rasterizationSamples = vk::SampleCountFlagBits::e1,
     };
 
-    // Depth: keep a fragment only if it's nearer than what's already there,
-    // then record its depth. With reverse-Z (see camera.cpp) nearer means a
-    // *greater* depth value, and the buffer is cleared to 0, the far plane.
+    // Depth: keep a fragment only if it's nearer than what's already there, then record its depth. With reverse-Z (see camera.cpp) nearer means a *greater* depth value, and the buffer is cleared to 0, the far plane.
     const vk::PipelineDepthStencilStateCreateInfo depth_stencil{
         .depthTestEnable = vk::True,
         .depthWriteEnable = vk::True,
@@ -658,24 +628,20 @@ vk::raii::Pipeline create_mesh_pipeline(const vk::raii::Device &device, vk::Form
         .pAttachments = &blend_attachment,
     };
 
-    // Dynamic rendering: instead of a VkRenderPass, the pipeline names the
-    // formats of the images it will draw into.
+    // Dynamic rendering: instead of a VkRenderPass, the pipeline names the formats of the images it will draw into.
     const vk::PipelineRenderingCreateInfo rendering{
         .colorAttachmentCount = 1,
         .pColorAttachmentFormats = &color_format,
         .depthAttachmentFormat = depth_format,
     };
 
-    // Descriptor heap mode is what makes `layout = nullptr` legal: shaders
-    // will reach resources through the heap and push data, not descriptor
-    // sets and push constants declared in a VkPipelineLayout.
+    // Descriptor heap mode is what makes `layout = nullptr` legal: shaders will reach resources through the heap and push data, not descriptor sets and push constants declared in a VkPipelineLayout.
     const vk::PipelineCreateFlags2CreateInfo flags{
         .pNext = &rendering,
         .flags = vk::PipelineCreateFlagBits2::eDescriptorHeapEXT,
     };
 
-    // pNext chain: create info -> flags -> rendering. Everything it points at
-    // lives until the end of this function, past the pipeline's creation.
+    // pNext chain: create info -> flags -> rendering. Everything it points at lives until the end of this function, past the pipeline's creation.
     return vk::raii::Pipeline(device, nullptr, vk::GraphicsPipelineCreateInfo{
         .pNext = &flags,
         .stageCount = static_cast<std::uint32_t>(stages.size()),
@@ -727,8 +693,7 @@ The camera turns "where am I and where am I looking" into the view and projectio
 
 #include <glm/glm.hpp>
 
-// What the mouse did since the last frame. The keyboard is read directly
-// from SDL in update_camera().
+// What the mouse did since the last frame. The keyboard is read directly from SDL in update_camera().
 struct CameraInput {
     glm::vec2 mouse_delta{0.0f};  // pixels moved since the last frame
     float wheel = 0.0f;           // scroll steps; positive is away from you
@@ -738,8 +703,7 @@ struct CameraInput {
 };
 
 // A fly camera with the Unreal Editor viewport's controls:
-//   right button held   mouse looks around, WASD moves, Q/E go down/up,
-//                       scroll changes the flying speed
+//   right button held   mouse looks around, WASD moves, Q/E go down/up, scroll changes the flying speed
 //   left button drag    left/right turns, up/down moves forward/back
 //   middle button drag  pans sideways and up/down
 //   scroll              moves forward/back
@@ -762,8 +726,7 @@ struct FlyCamera {
     glm::mat4 projection(float aspect) const;
 };
 
-// Moves and turns `camera` from `input` and the keyboard, `seconds` after
-// the last update.
+// Moves and turns `camera` from `input` and the keyboard, `seconds` after the last update.
 void update_camera(FlyCamera &camera, const CameraInput &input, float seconds);
 ```
 
@@ -779,22 +742,21 @@ void update_camera(FlyCamera &camera, const CameraInput &input, float seconds);
 
 namespace {
 
-constexpr glm::vec3 world_up{0.0f, 1.0f, 0.0f};
+    constexpr glm::vec3 world_up{0.0f, 1.0f, 0.0f};
 
-constexpr float look_sensitivity = 0.003f;  // radians per pixel of mouse movement
-constexpr float drag_sensitivity = 0.01f;   // fraction of `speed` moved per pixel of drag
-constexpr float scroll_step = 0.2f;         // fraction of `speed` moved per scroll step
-constexpr float speed_step = 1.25f;         // flying speed multiplier per scroll step
-constexpr float min_speed = 0.05f;
-constexpr float max_speed = 500.0f;
+    constexpr float look_sensitivity = 0.003f;  // radians per pixel of mouse movement
+    constexpr float drag_sensitivity = 0.01f;   // fraction of `speed` moved per pixel of drag
+    constexpr float scroll_step = 0.2f;         // fraction of `speed` moved per scroll step
+    constexpr float speed_step = 1.25f;         // flying speed multiplier per scroll step
+    constexpr float min_speed = 0.05f;
+    constexpr float max_speed = 500.0f;
 
 }  // namespace
 
-// --- Matrices ----------------------------------------------------------------
+// Matrices
 
 glm::vec3 FlyCamera::forward() const {
-    // Yaw turns around +Y, pitch tilts up and down. At yaw 0 and pitch 0 this
-    // is (0, 0, -1): glm's view space looks down -Z.
+    // Yaw turns around +Y, pitch tilts up and down. At yaw 0 and pitch 0 this is (0, 0, -1): glm's view space looks down -Z.
     return {
         -std::sin(yaw) * std::cos(pitch),
         std::sin(pitch),
@@ -807,11 +769,7 @@ glm::mat4 FlyCamera::view() const {
 }
 
 glm::mat4 FlyCamera::projection(float aspect) const {
-    // Reverse-Z: passing far before near maps the near plane to depth 1 and the
-    // far plane to depth 0. Floats are most precise near 0, and perspective
-    // crowds distant depths together; reversing puts the two in balance.
-    // GLM_FORCE_DEPTH_ZERO_TO_ONE (in CMakeLists.txt) makes glm produce
-    // Vulkan's 0..1 depth range instead of OpenGL's -1..1.
+    // Reverse-Z: passing far before near maps the near plane to depth 1 and the far plane to depth 0. Floats are most precise near 0, and perspective crowds distant depths together; reversing puts the two in balance. GLM_FORCE_DEPTH_ZERO_TO_ONE (in CMakeLists.txt) makes glm produce Vulkan's 0..1 depth range instead of OpenGL's -1..1.
     glm::mat4 projection = glm::perspective(vertical_fov, aspect, far_plane, near_plane);
 
     // glm follows OpenGL, where clip-space +Y is up; in Vulkan it's down.
@@ -819,7 +777,7 @@ glm::mat4 FlyCamera::projection(float aspect) const {
     return projection;
 }
 
-// --- Controls ----------------------------------------------------------------
+// Controls
 
 void update_camera(FlyCamera &camera, const CameraInput &input, float seconds) {
     const glm::vec3 forward = camera.forward();
@@ -831,8 +789,7 @@ void update_camera(FlyCamera &camera, const CameraInput &input, float seconds) {
     const float drag_distance = camera.speed * drag_sensitivity;
 
     if (input.right_button) {
-        // Look: each pixel of mouse movement is a small angle. Pitch stops just
-        // short of straight up or down, where "forward" and "up" would coincide.
+        // Look: each pixel of mouse movement is a small angle. Pitch stops just short of straight up or down, where "forward" and "up" would coincide.
         camera.yaw -= input.mouse_delta.x * look_sensitivity;
         camera.pitch -= input.mouse_delta.y * look_sensitivity;
         camera.pitch = std::clamp(camera.pitch, glm::radians(-89.0f), glm::radians(89.0f));
@@ -922,246 +879,237 @@ void update_camera(FlyCamera &camera, const CameraInput &input, float seconds) {
 
 namespace {
 
-// --- Frames in flight --------------------------------------------------------
+    // Frames in flight
 
-// How many frames the CPU may record ahead of the GPU.
-constexpr std::size_t frames_in_flight = 2;
+    // How many frames the CPU may record ahead of the GPU.
+    constexpr std::size_t frames_in_flight = 2;
 
-constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
+    constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
 
-// What each in-flight frame needs for itself.
-struct Frame {
-    vk::raii::CommandBuffer commands = nullptr;
-    vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
-    vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
-};
-
-// --- Recording a frame -------------------------------------------------------
-
-// Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
-// `aspect` is which part of the image: its color, or its depth.
-void transition(
-    const vk::raii::CommandBuffer &commands,
-    vk::Image image,
-    vk::ImageLayout from,
-    vk::ImageLayout to,
-    vk::PipelineStageFlags2 src_stage,
-    vk::AccessFlags2 src_access,
-    vk::PipelineStageFlags2 dst_stage,
-    vk::AccessFlags2 dst_access,
-    vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor
-) {
-    const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-        .oldLayout = from,
-        .newLayout = to,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = image,
-        .subresourceRange = {
-            .aspectMask = aspect,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+    // What each in-flight frame needs for itself.
+    struct Frame {
+        vk::raii::CommandBuffer commands = nullptr;
+        vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
+        vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     };
 
-    commands.pipelineBarrier2(vk::DependencyInfo{
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier,
-    });
-}
+    // Recording a frame
 
-// What to draw: one mesh, placed in the world by each of `models`.
-struct DrawList {
-    vk::DeviceAddress vertices = 0;
-    std::uint32_t vertex_count = 0;
-    glm::mat4 view_projection{1.0f};
-    std::span<const glm::mat4> models;
-};
-
-// Records: swapchain image -> clear color and depth -> draw everything in
-// `draws` with `pipeline` -> ready to present.
-void record_frame(
-    const vk::raii::CommandBuffer &commands,
-    const Swapchain &swapchain,
-    std::uint32_t image_index,
-    std::array<float, 4> color,
-    const vk::raii::Pipeline &pipeline,
-    const DrawList &draws
-) {
-    const vk::Image image = swapchain.images[image_index];
-
-    commands.reset();
-    commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-
-    // Undefined: we don't care what was in the image, we're about to clear it.
-    transition(commands, image,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-    );
-
-    // The depth buffer is shared by the frames in flight, so this also waits
-    // for the previous frame's depth tests before this frame clears it.
-    transition(commands, *swapchain.depth.handle,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eLateFragmentTests, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::ImageAspectFlagBits::eDepth
-    );
-
-    // loadOp eClear does the clearing when rendering begins.
-    const vk::RenderingAttachmentInfo color_attachment{
-        .imageView = *swapchain.views[image_index],
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
-    };
-
-    // Reverse-Z: 0 is the far plane. Depth is only needed while drawing this
-    // frame, so it isn't stored afterwards.
-    const vk::RenderingAttachmentInfo depth_attachment{
-        .imageView = *swapchain.depth.view,
-        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
-        .clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = 0.0f}},
-    };
-
-    commands.beginRendering(vk::RenderingInfo{
-        .renderArea = {.offset = {0, 0}, .extent = swapchain.extent},
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment,
-        .pDepthAttachment = &depth_attachment,
-    });
-
-    commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-
-    // The pipeline left these dynamic; they cover the whole image.
-    commands.setViewport(0, vk::Viewport{
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = static_cast<float>(swapchain.extent.width),
-        .height = static_cast<float>(swapchain.extent.height),
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    });
-    commands.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapchain.extent});
-
-    // One draw per object: the same vertices, a different model matrix. Push
-    // data is copied into the command buffer, so each draw sees its own values.
-    for (const glm::mat4 &model : draws.models) {
-        const PushData push{
-            .view_projection = draws.view_projection,
-            .model = model,
-            .vertices = draws.vertices,
+    // Moves `image` between layouts, and makes the `dst` work wait for the `src` work. `aspect` is which part of the image: its color, or its depth.
+    void transition(
+        const vk::raii::CommandBuffer &commands,
+        vk::Image image,
+        vk::ImageLayout from,
+        vk::ImageLayout to,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access,
+        vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor
+    ) {
+        const vk::ImageMemoryBarrier2 barrier{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = image,
+            .subresourceRange = {
+                .aspectMask = aspect,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
         };
 
-        commands.pushDataEXT(vk::PushDataInfoEXT{
-            .offset = 0,
-            .data = {.address = &push, .size = sizeof(push)},
+        commands.pipelineBarrier2(vk::DependencyInfo{
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &barrier,
         });
-
-        commands.draw(draws.vertex_count, 1, 0, 0);
     }
 
-    commands.endRendering();
-
-    transition(commands, image,
-        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
-    );
-
-    commands.end();
-}
-
-// --- Geometry ----------------------------------------------------------------
-
-// A unit cube centred on the origin: 6 faces x 2 triangles x 3 vertices, each
-// face one color. Corners go counter-clockwise as seen from outside the cube,
-// which Chapter 7's back-face culling will rely on.
-std::array<Vertex, 36> make_cube() {
-    struct Face {
-        std::array<glm::vec3, 4> corners;
-        glm::vec3 color;
+    // What to draw: one mesh, placed in the world by each of `models`.
+    struct DrawList {
+        vk::DeviceAddress vertices = 0;
+        std::uint32_t vertex_count = 0;
+        glm::mat4 view_projection{1.0f};
+        std::span<const glm::mat4> models;
     };
 
-    constexpr float h = 0.5f;
-    const std::array<Face, 6> faces{{
-        {{{{h, -h, h}, {h, -h, -h}, {h, h, -h}, {h, h, h}}}, {1.0f, 0.2f, 0.2f}},        // +X red
-        {{{{-h, -h, -h}, {-h, -h, h}, {-h, h, h}, {-h, h, -h}}}, {0.2f, 1.0f, 1.0f}},    // -X cyan
-        {{{{-h, h, h}, {h, h, h}, {h, h, -h}, {-h, h, -h}}}, {0.2f, 1.0f, 0.2f}},        // +Y green
-        {{{{-h, -h, -h}, {h, -h, -h}, {h, -h, h}, {-h, -h, h}}}, {1.0f, 0.2f, 1.0f}},    // -Y magenta
-        {{{{-h, -h, h}, {h, -h, h}, {h, h, h}, {-h, h, h}}}, {0.2f, 0.2f, 1.0f}},        // +Z blue
-        {{{{h, -h, -h}, {-h, -h, -h}, {-h, h, -h}, {h, h, -h}}}, {1.0f, 1.0f, 0.2f}},    // -Z yellow
-    }};
+    // Records: swapchain image -> clear color and depth -> draw everything in `draws` with `pipeline` -> ready to present.
+    void record_frame(
+        const vk::raii::CommandBuffer &commands,
+        const Swapchain &swapchain,
+        std::uint32_t image_index,
+        std::array<float, 4> color,
+        const vk::raii::Pipeline &pipeline,
+        const DrawList &draws
+    ) {
+        const vk::Image image = swapchain.images[image_index];
 
-    std::array<Vertex, 36> vertices{};
-    std::size_t next = 0;
+        commands.reset();
+        commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-    for (const Face &face : faces) {
-        // Two triangles per face: corners 0-1-2 and 0-2-3.
-        for (const std::size_t corner : {0, 1, 2, 0, 2, 3}) {
-            vertices[next++] = Vertex{.position = face.corners[corner], .color = face.color};
+        // Undefined: we don't care what was in the image, we're about to clear it.
+        transition(commands, image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
+        );
+
+        // The depth buffer is shared by the frames in flight, so this also waits for the previous frame's depth tests before this frame clears it.
+        transition(commands, *swapchain.depth.handle,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eLateFragmentTests, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::ImageAspectFlagBits::eDepth
+        );
+
+        // loadOp eClear does the clearing when rendering begins.
+        const vk::RenderingAttachmentInfo color_attachment{
+            .imageView = *swapchain.views[image_index],
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
+        };
+
+        // Reverse-Z: 0 is the far plane. Depth is only needed while drawing this frame, so it isn't stored afterwards.
+        const vk::RenderingAttachmentInfo depth_attachment{
+            .imageView = *swapchain.depth.view,
+            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eDontCare,
+            .clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = 0.0f}},
+        };
+
+        commands.beginRendering(vk::RenderingInfo{
+            .renderArea = {.offset = {0, 0}, .extent = swapchain.extent},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &color_attachment,
+            .pDepthAttachment = &depth_attachment,
+        });
+
+        commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+
+        // The pipeline left these dynamic; they cover the whole image.
+        commands.setViewport(0, vk::Viewport{
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = static_cast<float>(swapchain.extent.width),
+            .height = static_cast<float>(swapchain.extent.height),
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f,
+        });
+        commands.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapchain.extent});
+
+        // One draw per object: the same vertices, a different model matrix. Push data is copied into the command buffer, so each draw sees its own values.
+        for (const glm::mat4 &model : draws.models) {
+            const PushData push{
+                .view_projection = draws.view_projection,
+                .model = model,
+                .vertices = draws.vertices,
+            };
+
+            commands.pushDataEXT(vk::PushDataInfoEXT{
+                .offset = 0,
+                .data = {.address = &push, .size = sizeof(push)},
+            });
+
+            commands.draw(draws.vertex_count, 1, 0, 0);
         }
+
+        commands.endRendering();
+
+        transition(commands, image,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
+        );
+
+        commands.end();
     }
 
-    return vertices;
-}
+    // Geometry
 
-// --- Events ------------------------------------------------------------------
+    // A unit cube centred on the origin: 6 faces x 2 triangles x 3 vertices, each face one color. Corners go counter-clockwise as seen from outside the cube, which Chapter 7's back-face culling will rely on.
+    std::array<Vertex, 36> make_cube() {
+        struct Face {
+            std::array<glm::vec3, 4> corners;
+            glm::vec3 color;
+        };
 
-// Handles every pending event and fills in `input` for this frame. False once
-// the window was closed or Escape pressed.
-bool poll_events(SDL_Window *window, CameraInput &input) {
-    input = CameraInput{};
-    SDL_Event event;
+        constexpr float h = 0.5f;
+        const std::array<Face, 6> faces{{
+            {{{{h, -h, h}, {h, -h, -h}, {h, h, -h}, {h, h, h}}}, {1.0f, 0.2f, 0.2f}},        // +X red
+            {{{{-h, -h, -h}, {-h, -h, h}, {-h, h, h}, {-h, h, -h}}}, {0.2f, 1.0f, 1.0f}},    // -X cyan
+            {{{{-h, h, h}, {h, h, h}, {h, h, -h}, {-h, h, -h}}}, {0.2f, 1.0f, 0.2f}},        // +Y green
+            {{{{-h, -h, -h}, {h, -h, -h}, {h, -h, h}, {-h, -h, h}}}, {1.0f, 0.2f, 1.0f}},    // -Y magenta
+            {{{{-h, -h, h}, {h, -h, h}, {h, h, h}, {-h, h, h}}}, {0.2f, 0.2f, 1.0f}},        // +Z blue
+            {{{{h, -h, -h}, {-h, -h, -h}, {-h, h, -h}, {h, h, -h}}}, {1.0f, 1.0f, 0.2f}},    // -Z yellow
+        }};
 
-    while (SDL_PollEvent(&event)) {
-        const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
+        std::array<Vertex, 36> vertices{};
+        std::size_t next = 0;
 
-        if (event.type == SDL_EVENT_QUIT || escape) {
-            return false;
+        for (const Face &face : faces) {
+            // Two triangles per face: corners 0-1-2 and 0-2-3.
+            for (const std::size_t corner : {0, 1, 2, 0, 2, 3}) {
+                vertices[next++] = Vertex{.position = face.corners[corner], .color = face.color};
+            }
         }
 
-        if (event.type == SDL_EVENT_MOUSE_MOTION) {
-            input.mouse_delta += glm::vec2{event.motion.xrel, event.motion.yrel};
-        } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-            input.wheel += event.wheel.y;
+        return vertices;
+    }
+
+    // Events
+
+    // Handles every pending event and fills in `input` for this frame. False once the window was closed or Escape pressed.
+    bool poll_events(SDL_Window *window, CameraInput &input) {
+        input = CameraInput{};
+        SDL_Event event;
+
+        while (SDL_PollEvent(&event)) {
+            const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
+
+            if (event.type == SDL_EVENT_QUIT || escape) {
+                return false;
+            }
+
+            if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                input.mouse_delta += glm::vec2{event.motion.xrel, event.motion.yrel};
+            } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                input.wheel += event.wheel.y;
+            }
         }
+
+        // Which buttons are held right now.
+        const SDL_MouseButtonFlags buttons = SDL_GetMouseState(nullptr, nullptr);
+        input.right_button = (buttons & SDL_BUTTON_RMASK) != 0;
+        input.left_button = (buttons & SDL_BUTTON_LMASK) != 0;
+        input.middle_button = (buttons & SDL_BUTTON_MMASK) != 0;
+
+        // While a button is held, relative mode hides the cursor and keeps reporting movement, so a drag can't run into the edge of the screen.
+        const bool dragging = input.right_button || input.left_button || input.middle_button;
+
+        if (dragging != SDL_GetWindowRelativeMouseMode(window)) {
+            SDL_SetWindowRelativeMouseMode(window, dragging);
+        }
+
+        return true;
     }
-
-    // Which buttons are held right now.
-    const SDL_MouseButtonFlags buttons = SDL_GetMouseState(nullptr, nullptr);
-    input.right_button = (buttons & SDL_BUTTON_RMASK) != 0;
-    input.left_button = (buttons & SDL_BUTTON_LMASK) != 0;
-    input.middle_button = (buttons & SDL_BUTTON_MMASK) != 0;
-
-    // While a button is held, relative mode hides the cursor and keeps
-    // reporting movement, so a drag can't run into the edge of the screen.
-    const bool dragging = input.right_button || input.left_button || input.middle_button;
-
-    if (dragging != SDL_GetWindowRelativeMouseMode(window)) {
-        SDL_SetWindowRelativeMouseMode(window, dragging);
-    }
-
-    return true;
-}
 
 }  // namespace
 
 int main() {
     try {
-        // --- Window and instance ---------------------------------------------
+        // Window and instance
 
         SdlContext sdl;
         const int version = SDL_GetVersion();
@@ -1178,9 +1126,7 @@ int main() {
 #endif
         std::println("Validation layer {}", validation ? "on" : "off");
 
-        // Declaration order matters: each object is destroyed before the ones above it.
-        // The window comes first: creating it loads Vulkan into SDL, which
-        // required_vulkan_extensions() needs.
+        // Declaration order matters: each object is destroyed before the ones above it. The window comes first: creating it loads Vulkan into SDL, which required_vulkan_extensions() needs.
         Window window = make_vulkan_window(1920, 1080, "game-engine", true);
 
         vk::raii::Instance instance = create_instance(context, SdlContext::required_vulkan_extensions(), validation);
@@ -1190,7 +1136,7 @@ int main() {
 
         vk::raii::SurfaceKHR surface = create_surface(instance, window.get());
 
-        // --- GPU, device and swapchain ---------------------------------------
+        // GPU, device and swapchain
 
         std::println("GPUs:");
         std::optional<GpuChoice> gpu = pick_gpu(instance, surface);
@@ -1207,13 +1153,12 @@ int main() {
         vk::raii::Queue queue = device.getQueue(gpu->queue_family, 0);
         Swapchain swapchain = create_swapchain(device, *gpu, surface, window.get());
 
-        // --- Pipelines -------------------------------------------------------
+        // Pipelines
 
-        // Built for swapchain.format and depth_format. recreate_swapchain() picks
-        // the same formats again, so the pipeline stays valid across resizes.
+        // Built for swapchain.format and depth_format. recreate_swapchain() picks the same formats again, so the pipeline stays valid across resizes.
         vk::raii::Pipeline pipeline = create_mesh_pipeline(device, swapchain.format, depth_format);
 
-        // --- Per-frame resources ---------------------------------------------
+        // Per-frame resources
 
         // eResetCommandBuffer lets us re-record each frame's command buffer.
         vk::raii::CommandPool command_pool(device, vk::CommandPoolCreateInfo{
@@ -1237,29 +1182,26 @@ int main() {
             });
         }
 
-        // --- Geometry --------------------------------------------------------
+        // Geometry
 
-        // eShaderDeviceAddress: the shader reads it through a pointer, so it
-        // needs a GPU address and no other usage.
+        // eShaderDeviceAddress: the shader reads it through a pointer, so it needs a GPU address and no other usage.
         const std::array<Vertex, 36> cube = make_cube();
         const Buffer cube_buffer = upload_buffer(device, *gpu, queue, command_pool,
             std::as_bytes(std::span(cube)), vk::BufferUsageFlagBits::eShaderDeviceAddress);
 
-        // --- Scene -----------------------------------------------------------
+        // Scene
 
         // Spawns at the origin, looking down -Z.
         FlyCamera camera;
         CameraInput input;
 
-        // A 3x3 grid of spinning cubes in front of the camera, close enough to
-        // cut into each other. Where they intersect only looks right with a
-        // depth buffer.
+        // A 3x3 grid of spinning cubes in front of the camera, close enough to cut into each other. Where they intersect only looks right with a depth buffer.
         constexpr int grid = 3;
         constexpr float spacing = 1.0f;
         std::vector<glm::mat4> models(grid * grid);
         std::uint64_t previous_ticks = SDL_GetTicksNS();
 
-        // --- Frame loop ------------------------------------------------------
+        // Frame loop
 
         const std::array black{0.0f, 0.0f, 0.0f, 1.0f};
         std::uint64_t frame_count = 0;
@@ -1279,7 +1221,7 @@ int main() {
                 recreate_swapchain(swapchain, device, *gpu, surface, window.get());
             }
 
-            // --- Update -----------------------------------------------------
+            // Update
 
             // Seconds since the last frame, so movement doesn't depend on frame rate.
             const std::uint64_t ticks = SDL_GetTicksNS();
@@ -1310,7 +1252,7 @@ int main() {
                 .models = models,
             };
 
-            // --- Render -----------------------------------------------------
+            // Render
 
             Frame &frame = frames[frame_count % frames_in_flight];
 
@@ -1369,7 +1311,7 @@ int main() {
             ++frame_count;
         }
 
-        // --- Shutdown --------------------------------------------------------
+        // Shutdown
 
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();

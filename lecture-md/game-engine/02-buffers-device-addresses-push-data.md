@@ -29,14 +29,11 @@ The GPU reads our buffers byte for byte. If the C++ side writes a vertex as 24 b
 #include <array>
 #include <cstddef>
 
-// C++ mirrors of the structs in shaders/triangle.slang. The GPU reads these
-// bytes as they are, so the two sides must agree on every size and offset;
-// the static_asserts catch a mismatch at compile time.
+// C++ mirrors of the structs in shaders/triangle.slang. The GPU reads these bytes as they are, so the two sides must agree on every size and offset; the static_asserts catch a mismatch at compile time.
 
-// --- Vertex ------------------------------------------------------------------
+// Vertex
 
-// Slang lays out data behind a pointer like C: a float3 is 12 bytes, with no
-// padding, so position is at byte 0, color at byte 12, and a vertex is 24.
+// Slang lays out data behind a pointer like C: a float3 is 12 bytes, with no padding, so position is at byte 0, color at byte 12, and a vertex is 24.
 struct Vertex {
     std::array<float, 3> position;
     std::array<float, 3> color;
@@ -45,7 +42,7 @@ struct Vertex {
 static_assert(sizeof(Vertex) == 24);
 static_assert(offsetof(Vertex, color) == 12);
 
-// --- Push data ---------------------------------------------------------------
+// Push data
 
 // Written with vkCmdPushDataEXT before each draw.
 struct PushData {
@@ -101,8 +98,7 @@ Finally, a shader can't just "use a buffer". It needs some way to find it. Inste
 #include <functional>
 #include <span>
 
-// A VkBuffer, the memory behind it, and its GPU address. Members are destroyed
-// bottom-up, so the buffer goes before the memory it's bound to.
+// A VkBuffer, the memory behind it, and its GPU address. Members are destroyed bottom-up, so the buffer goes before the memory it's bound to.
 struct Buffer {
     vk::raii::DeviceMemory memory = nullptr;
     vk::raii::Buffer handle = nullptr;
@@ -110,10 +106,9 @@ struct Buffer {
     vk::DeviceAddress address = 0;  // 0 unless created with eShaderDeviceAddress
 };
 
-// --- Creating buffers --------------------------------------------------------
+// Creating buffers
 
-// A buffer of `size` bytes in memory with `properties`. With eShaderDeviceAddress
-// in `usage`, `address` is filled in, so shaders can read it through a pointer.
+// A buffer of `size` bytes in memory with `properties`. With eShaderDeviceAddress in `usage`, `address` is filled in, so shaders can read it through a pointer.
 Buffer create_buffer(
     const vk::raii::Device &device,
     const GpuChoice &gpu,
@@ -122,10 +117,9 @@ Buffer create_buffer(
     vk::MemoryPropertyFlags properties
 );
 
-// --- Uploading ---------------------------------------------------------------
+// Uploading
 
-// Records commands with `record`, submits them to `queue`, and waits until
-// the GPU has finished. For one-off work like uploads, not for every frame.
+// Records commands with `record`, submits them to `queue`, and waits until the GPU has finished. For one-off work like uploads, not for every frame.
 void submit_and_wait(
     const vk::raii::Device &device,
     const vk::raii::Queue &queue,
@@ -133,8 +127,7 @@ void submit_and_wait(
     const std::function<void(const vk::raii::CommandBuffer&)> &record
 );
 
-// A device-local buffer holding a copy of `bytes`, which the GPU reads at
-// full speed and shaders can reach through `address`.
+// A device-local buffer holding a copy of `bytes`, which the GPU reads at full speed and shaders can reach through `address`.
 Buffer upload_buffer(
     const vk::raii::Device &device,
     const GpuChoice &gpu,
@@ -155,28 +148,26 @@ Buffer upload_buffer(
 
 namespace {
 
-// --- Memory types ------------------------------------------------------------
+    // Memory types
 
-// The GPU offers a few memory types, each a set of properties (device-local,
-// host-visible, ...) in one of its heaps. `allowed` is the bitmask a buffer's
-// memory requirements permit; we take the first allowed type with `required`.
-std::uint32_t find_memory_type(const GpuChoice &gpu, std::uint32_t allowed, vk::MemoryPropertyFlags required) {
-    const vk::PhysicalDeviceMemoryProperties memory = gpu.device.getMemoryProperties();
+    // The GPU offers a few memory types, each a set of properties (device-local, host-visible, ...) in one of its heaps. `allowed` is the bitmask a buffer's memory requirements permit; we take the first allowed type with `required`.
+    std::uint32_t find_memory_type(const GpuChoice &gpu, std::uint32_t allowed, vk::MemoryPropertyFlags required) {
+        const vk::PhysicalDeviceMemoryProperties memory = gpu.device.getMemoryProperties();
 
-    for (std::uint32_t i = 0; i < memory.memoryTypeCount; ++i) {
-        const bool is_allowed = (allowed & (1u << i)) != 0;
+        for (std::uint32_t i = 0; i < memory.memoryTypeCount; ++i) {
+            const bool is_allowed = (allowed & (1u << i)) != 0;
 
-        if (is_allowed && (memory.memoryTypes[i].propertyFlags & required) == required) {
-            return i;
+            if (is_allowed && (memory.memoryTypes[i].propertyFlags & required) == required) {
+                return i;
+            }
         }
-    }
 
-    throw std::runtime_error("no memory type has " + vk::to_string(required));
-}
+        throw std::runtime_error("no memory type has " + vk::to_string(required));
+    }
 
 }  // namespace
 
-// --- Creating buffers --------------------------------------------------------
+// Creating buffers
 
 Buffer create_buffer(
     const vk::raii::Device &device,
@@ -221,7 +212,7 @@ Buffer create_buffer(
     return buffer;
 }
 
-// --- Uploading ---------------------------------------------------------------
+// Uploading
 
 void submit_and_wait(
     const vk::raii::Device &device,
@@ -259,9 +250,7 @@ Buffer upload_buffer(
     std::span<const std::byte> bytes,
     vk::BufferUsageFlags usage
 ) {
-    // The CPU can't write device-local memory directly, so the bytes go into a
-    // host-visible "staging" buffer first. Host-coherent means our writes are
-    // visible to the GPU without an explicit flush.
+    // The CPU can't write device-local memory directly, so the bytes go into a host-visible "staging" buffer first. Host-coherent means our writes are visible to the GPU without an explicit flush.
     const Buffer staging = create_buffer(device, gpu, bytes.size(),
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -297,14 +286,11 @@ The classic way to feed vertices to a vertex shader is to describe their layout 
 ### Code
 `game-engine/shaders/triangle.slang`:
 ```slang
-// A triangle whose corners live in a GPU buffer. The C++ side uploads them
-// and pushes the buffer's address; the vertex shader reads its corner through
-// that pointer.
+// A triangle whose corners live in a GPU buffer. The C++ side uploads them and pushes the buffer's address; the vertex shader reads its corner through that pointer.
 
-// --- Data shared with C++ (src/includes/shader_types.h) ----------------------
+// Data shared with C++ (src/includes/shader_types.h)
 
-// Data behind a pointer is laid out like C: a float3 is 12 bytes and nothing
-// is padded, so this matches the C++ Vertex exactly (24 bytes).
+// Data behind a pointer is laid out like C: a float3 is 12 bytes and nothing is padded, so this matches the C++ Vertex exactly (24 bytes).
 struct Vertex {
     float3 position;
     float3 color;
@@ -319,23 +305,20 @@ struct PushData {
 [[vk::push_constant]]
 ConstantBuffer<PushData> push;
 
-// --- Stage interface ---------------------------------------------------------
+// Stage interface
 
-// What the vertex shader hands to the rasterizer. SV_Position is the
-// clip-space position; every other field is interpolated across the triangle.
+// What the vertex shader hands to the rasterizer. SV_Position is the clip-space position; every other field is interpolated across the triangle.
 struct VertexOutput {
     float4 position : SV_Position;
     float3 color : COLOR;
 };
 
-// --- Vertex shader -----------------------------------------------------------
+// Vertex shader
 
-// SV_VulkanVertexID is Vulkan's own gl_VertexIndex. HLSL's SV_VertexID would
-// subtract the draw's base vertex, which needs the DrawParameters capability.
+// SV_VulkanVertexID is Vulkan's own gl_VertexIndex. HLSL's SV_VertexID would subtract the draw's base vertex, which needs the DrawParameters capability.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
-    // "Vertex pulling": the shader indexes the buffer itself, so the pipeline
-    // declares no vertex attributes.
+    // "Vertex pulling": the shader indexes the buffer itself, so the pipeline declares no vertex attributes.
     const Vertex vertex = push.vertices[vertex_id];
 
     VertexOutput output;
@@ -344,7 +327,7 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     return output;
 }
 
-// --- Fragment shader ---------------------------------------------------------
+// Fragment shader
 
 // SV_Target: the value written to color attachment 0.
 [shader("fragment")]
@@ -357,8 +340,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
 
 The pipeline itself doesn't change: it still declares no vertex input, which is exactly what vertex pulling needs. Only the comment above `vertex_input` in `game-engine/src/pipeline.cpp` is now out of date. Update it:
 ```cpp
-    // Vertex input and assembly: no vertex attributes, the vertex shader reads
-    // its vertex through a pointer. Every 3 vertices form a triangle.
+    // Vertex input and assembly: no vertex attributes, the vertex shader reads its vertex through a pointer. Every 3 vertices form a triangle.
     const vk::PipelineVertexInputStateCreateInfo vertex_input{};
 ```
 
@@ -397,8 +379,7 @@ Four edits to `game-engine/src/main.cpp`.
 
 **2.** Replace `record_frame` with this version. It takes the vertex buffer's address and pushes it before the draw:
 ```cpp
-// Records: swapchain image -> clear to `color` -> draw the triangle at
-// `vertices` with `pipeline` -> ready to present.
+// Records: swapchain image -> clear to `color` -> draw the triangle at `vertices` with `pipeline` -> ready to present.
 void record_frame(
     const vk::raii::CommandBuffer &commands,
     const Swapchain &swapchain,
@@ -448,8 +429,7 @@ void record_frame(
     });
     commands.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapchain.extent});
 
-    // Hand the shader the vertex buffer's address. Push data is recorded into
-    // the command buffer, so each draw can push different values.
+    // Hand the shader the vertex buffer's address. Push data is recorded into the command buffer, so each draw can push different values.
     const PushData push{.vertices = vertices};
 
     commands.pushDataEXT(vk::PushDataInfoEXT{
@@ -472,9 +452,9 @@ void record_frame(
 }
 ```
 
-**3.** In `main`, directly before the `// --- Frame loop` section, add a new section:
+**3.** In `main`, directly before the `// Frame loop` section, add a new section:
 ```cpp
-        // --- Geometry --------------------------------------------------------
+        // Geometry
 
         // Vulkan clip space: x and y run from -1 to 1, with +y pointing down.
         constexpr std::array<Vertex, 3> triangle{{
@@ -483,8 +463,7 @@ void record_frame(
             {.position = {-0.5f, 0.5f, 0.0f}, .color = {0.0f, 0.0f, 1.0f}},   // bottom left
         }};
 
-        // eShaderDeviceAddress: the shader reads it through a pointer, so it
-        // needs a GPU address and no other usage.
+        // eShaderDeviceAddress: the shader reads it through a pointer, so it needs a GPU address and no other usage.
         const Buffer vertex_buffer = upload_buffer(device, *gpu, queue, command_pool,
             std::as_bytes(std::span(triangle)), vk::BufferUsageFlagBits::eShaderDeviceAddress);
 ```

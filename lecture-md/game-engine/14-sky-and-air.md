@@ -50,27 +50,18 @@ The tables, the background and the scene's shaders all need the same air, the sa
 ### Code
 `game-engine/shaders/atmosphere.slangh`:
 ```slang
-// The atmosphere: Earth's air, haze and ozone, and how light crosses them.
-// Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere
-// Rendering Technique", with Bruneton's transmittance lookup (from Bruneton
-// and Neyret 2008, as in his 2017 reference implementation). Shared by atmosphere.slang, which builds the lookup tables,
-// background.slang, which draws the sky from one of them, and mesh.slang,
-// which reads the haze.
+// The atmosphere: Earth's air, haze and ozone, and how light crosses them. Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique", with Bruneton's transmittance lookup (from Bruneton and Neyret 2008, as in his 2017 reference implementation). Shared by atmosphere.slang, which builds the lookup tables, background.slang, which draws the sky from one of them, and mesh.slang, which reads the haze.
 //
-// The planet is a sphere; the camera stands above its top, at x = z = 0.
-// Every position here is relative to the planet's centre, in metres, and
-// the world's +Y is up. Over the few kilometres a scene spans, the ground
-// is taken as flat: only the camera's height moves it on the sphere.
+// The planet is a sphere; the camera stands above its top, at x = z = 0. Every position here is relative to the planet's centre, in metres, and the world's +Y is up. Over the few kilometres a scene spans, the ground is taken as flat: only the camera's height moves it on the sphere.
 
 static const float atmosphere_pi = 3.14159265;
 
-// --- The medium ----------------------------------------------------------------
+// The medium
 
 static const float planet_radius = 6360e3;
 static const float atmosphere_radius = 6460e3;
 
-// Air molecules (Rayleigh scattering): far more for blue than red, which is
-// why the sky is blue, and why the sun reddens near the horizon.
+// Air molecules (Rayleigh scattering): far more for blue than red, which is why the sky is blue, and why the sun reddens near the horizon.
 static const float3 rayleigh_scattering = float3(5.802e-6, 13.558e-6, 33.1e-6);
 static const float rayleigh_height = 8000.0;  // density falls to 1/e of its value every 8 km
 
@@ -80,22 +71,17 @@ static const float mie_extinction = 4.440e-6;  // scattering plus absorption
 static const float mie_height = 1200.0;
 static const float mie_anisotropy = 0.8;
 
-// Ozone absorbs, mostly green and red, in a layer 25 km up: at sunset, when the
-// light crosses most of it, it keeps the sky blue overhead.
+// Ozone absorbs, mostly green and red, in a layer 25 km up: at sunset, when the light crosses most of it, it keeps the sky blue overhead.
 static const float3 ozone_absorption = float3(0.650e-6, 1.881e-6, 0.085e-6);
 
-// The sun outside the atmosphere, in lux, and the ground's albedo for the
-// light it reflects back up.
+// The sun outside the atmosphere, in lux, and the ground's albedo for the light it reflects back up.
 static const float sun_illuminance_in_space = 128000.0;
 static const float ground_albedo = 0.2;
 
 // How far the aerial perspective volume reaches, in metres.
 static const float aerial_distance = 32000.0;
 
-// What the medium is like at `altitude`: how much it scatters, and how much
-// it scatters or absorbs in all (extinction), per metre. Below the sphere
-// counts as on it: the aerial perspective volume reaches past the scene's
-// ground, and along a downward ray, past the ground is under the sphere.
+// What the medium is like at `altitude`: how much it scatters, and how much it scatters or absorbs in all (extinction), per metre. Below the sphere counts as on it: the aerial perspective volume reaches past the scene's ground, and along a downward ray, past the ground is under the sphere.
 struct Medium {
     float3 rayleigh;    // Rayleigh scattering
     float mie;          // Mie scattering
@@ -115,8 +101,7 @@ Medium medium_at(float altitude) {
     return medium;
 }
 
-// Rayleigh's phase function: how much light scatters by angle (cosine mu);
-// as much forward as back, least at right angles.
+// Rayleigh's phase function: how much light scatters by angle (cosine mu); as much forward as back, least at right angles.
 float rayleigh_phase(float mu) {
     return 3.0 / (16.0 * atmosphere_pi) * (1.0 + mu * mu);
 }
@@ -129,11 +114,9 @@ float mie_phase(float mu) {
         / ((2.0 + g2) * pow(1.0 + g2 - 2.0 * g * mu, 1.5));
 }
 
-// --- Spheres -------------------------------------------------------------------
+// Spheres
 
-// Distance along a ray from `origin` (relative to the planet's centre) in
-// direction `direction` to where it leaves a sphere of `radius` from inside,
-// or -1 if it misses.
+// Distance along a ray from `origin` (relative to the planet's centre) in direction `direction` to where it leaves a sphere of `radius` from inside, or -1 if it misses.
 float sphere_exit(float3 origin, float3 direction, float radius) {
     const float b = dot(origin, direction);
     const float c = dot(origin, origin) - radius * radius;
@@ -155,13 +138,9 @@ float ground_hit(float3 origin, float3 direction) {
     return t > 0.0 ? t : -1.0;
 }
 
-// --- Lookup tables ---------------------------------------------------------------
+// Lookup tables
 
-// Transmittance: the share of light, per channel, that crosses the
-// atmosphere from a point at radius r looking up at zenith cosine mu, all
-// the way out. Bruneton's mapping: texture x is how far along the
-// possible distances to the top the ray's is, texture y the radius, both
-// spaced so that the horizon, where it changes fastest, gets the most texels.
+// Transmittance: the share of light, per channel, that crosses the atmosphere from a point at radius r looking up at zenith cosine mu, all the way out. Bruneton's mapping: texture x is how far along the possible distances to the top the ray's is, texture y the radius, both spaced so that the horizon, where it changes fastest, gets the most texels.
 float2 transmittance_uv(float r, float mu) {
     const float h = sqrt(atmosphere_radius * atmosphere_radius - planet_radius * planet_radius);
     const float rho = sqrt(max(0.0, r * r - planet_radius * planet_radius));
@@ -183,10 +162,7 @@ void transmittance_r_mu(float2 uv, out float r, out float mu) {
     mu = d == 0.0 ? 1.0 : clamp((h * h - rho * rho - d * d) / (2.0 * r * d), -1.0, 1.0);
 }
 
-// The sunlight that reaches `point`: the sun's illuminance outside, times
-// the transmittance toward it, or nothing where the planet is in the way:
-// where the sun is below the horizon seen from radius r (Bruneton's
-// test). Points below the sphere count as on it, as in medium_at.
+// The sunlight that reaches `point`: the sun's illuminance outside, times the transmittance toward it, or nothing where the planet is in the way: where the sun is below the horizon seen from radius r (Bruneton's test). Points below the sphere count as on it, as in medium_at.
 float3 sunlight_at(Texture2D transmittance, SamplerState clamped, float3 point, float3 sun) {
     const float length_point = length(point);
     const float r = max(length_point, planet_radius);
@@ -199,11 +175,7 @@ float3 sunlight_at(Texture2D transmittance, SamplerState clamped, float3 point, 
     return sun_illuminance_in_space * transmittance.SampleLevel(clamped, transmittance_uv(r, mu), 0.0).rgb;
 }
 
-// Multiple scattering (Hillaire 2020, section 5.5): light scattered more
-// than once, per unit of sun illuminance, by a point at radius r with the
-// sun at zenith cosine mu. Texture x is the sun's zenith cosine, y the
-// altitude; both pulled half a texel in from the edges, so the texel
-// centres at the ends land exactly on them.
+// Multiple scattering (Hillaire 2020, section 5.5): light scattered more than once, per unit of sun illuminance, by a point at radius r with the sun at zenith cosine mu. Texture x is the sun's zenith cosine, y the altitude; both pulled half a texel in from the edges, so the texel centres at the ends land exactly on them.
 static const float multiscatter_size = 32.0;
 
 float2 multiscatter_uv(float r, float sun_mu) {
@@ -211,14 +183,9 @@ float2 multiscatter_uv(float r, float sun_mu) {
     return (saturate(unit) * (multiscatter_size - 1.0) + 0.5) / multiscatter_size;
 }
 
-// --- The light scattered along a ray ------------------------------------------------
+// The light scattered along a ray
 
-// What a ray from `origin` in `direction` sees of the atmosphere over its
-// first `distance` metres: the light scattered toward it (in nits, sun
-// included through `sunlight_at`, plus multiple scattering), and the
-// transmittance of that stretch. Integrated in `steps` segments; within each,
-// the medium is taken as constant, and the light it adds is integrated
-// exactly against the transmittance falling across it (Hillaire 2015).
+// What a ray from `origin` in `direction` sees of the atmosphere over its first `distance` metres: the light scattered toward it (in nits, sun included through `sunlight_at`, plus multiple scattering), and the transmittance of that stretch. Integrated in `steps` segments; within each, the medium is taken as constant, and the light it adds is integrated exactly against the transmittance falling across it (Hillaire 2015).
 struct Scattered {
     float3 light;
     float3 transmittance;
@@ -243,15 +210,13 @@ Scattered integrate_ray(
         const Medium medium = medium_at(r - planet_radius);
         const float3 up = point / r;
 
-        // Single scattering, toward the ray, by angle; multiple scattering,
-        // already spread evenly, by how much the medium scatters at all.
+        // Single scattering, toward the ray, by angle; multiple scattering, already spread evenly, by how much the medium scatters at all.
         const float3 scattering = medium.rayleigh * phase_rayleigh + medium.mie * phase_mie;
         const float3 multiple = multiscatter.SampleLevel(clamped, multiscatter_uv(r, dot(up, sun)), 0.0).rgb;
         const float3 source = sunlight_at(transmittance, clamped, point, sun) * scattering
             + sun_illuminance_in_space * multiple * (medium.rayleigh + medium.mie);
 
-        // The segment's own transmittance, and what it adds: the source
-        // integrated over the segment, dimmed as it goes.
+        // The segment's own transmittance, and what it adds: the source integrated over the segment, dimmed as it goes.
         const float3 segment = exp(-medium.extinction * dt);
         const float3 added = (source - source * segment) / max(medium.extinction, 1e-12);
 
@@ -262,14 +227,9 @@ Scattered integrate_ray(
     return result;
 }
 
-// --- The sky-view table ---------------------------------------------------------------
+// The sky-view table
 
-// The sky around the camera, by direction: Hillaire 2020's sky-view table,
-// 192 x 108 texels. Texture y is the view's angle from the zenith: the top
-// half from the zenith down to the horizon, the bottom half from the horizon
-// to the nadir, each squeezed so the horizon, where the sky changes fastest,
-// gets the most texels. Texture x is the view's angle around the up axis,
-// from the sun (x = 0) to opposite it (x = 1), also squeezed toward the sun.
+// The sky around the camera, by direction: Hillaire 2020's sky-view table, 192 x 108 texels. Texture y is the view's angle from the zenith: the top half from the zenith down to the horizon, the bottom half from the horizon to the nadir, each squeezed so the horizon, where the sky changes fastest, gets the most texels. Texture x is the view's angle around the up axis, from the sun (x = 0) to opposite it (x = 1), also squeezed toward the sun.
 static const float2 sky_view_size = float2(192.0, 108.0);
 
 // The camera's position for the tables: above the planet's top by `altitude`.
@@ -277,8 +237,7 @@ float3 camera_origin(float altitude) {
     return float3(0.0, planet_radius + max(altitude, 1.0), 0.0);
 }
 
-// The angle from the zenith down to the horizon, at radius r: past the
-// horizon, a ray hits the ground.
+// The angle from the zenith down to the horizon, at radius r: past the horizon, a ray hits the ground.
 float horizon_zenith_angle(float r) {
     const float to_horizon = sqrt(max(r * r - planet_radius * planet_radius, 0.0));
     return atmosphere_pi - acos(to_horizon / r);
@@ -303,8 +262,7 @@ float2 sky_view_uv(float r, float view_zenith_cos, float light_view_cos) {
     return (uv * (sky_view_size - 1.0) + 0.5) / sky_view_size;
 }
 
-// The inverse: the view direction a texel stands for, in a frame where the
-// sun lies in the plane of +X and +Y.
+// The inverse: the view direction a texel stands for, in a frame where the sun lies in the plane of +X and +Y.
 float3 sky_view_direction(float r, float2 uv) {
     uv = saturate((uv * sky_view_size - 0.5) / (sky_view_size - 1.0));
 
@@ -326,8 +284,7 @@ float3 sky_view_direction(float r, float2 uv) {
     return float3(sin_zenith * light_view_cos, cos(angle), sin_zenith * sin_light_view);
 }
 
-// The sky in world direction `direction`, from the sky-view table: its
-// angle from the zenith, and its angle around the up axis from the sun's.
+// The sky in world direction `direction`, from the sky-view table: its angle from the zenith, and its angle around the up axis from the sun's.
 float3 sky_view_radiance(Texture2D sky_view, SamplerState clamped, float altitude, float3 direction, float3 sun) {
     const float r = planet_radius + max(altitude, 1.0);
     const float2 view_horizontal = direction.xz;
@@ -337,12 +294,9 @@ float3 sky_view_radiance(Texture2D sky_view, SamplerState clamped, float altitud
     return sky_view.SampleLevel(clamped, sky_view_uv(r, direction.y, light_view_cos), 0.0).rgb;
 }
 
-// --- Aerial perspective ------------------------------------------------------------
+// Aerial perspective
 
-// The air between the camera and a point: 32 x 32 texels across the screen,
-// 32 slices in depth, spread quadratically out to aerial_distance, so the
-// near slices, where things are seen in detail, are thin. Slice s holds the
-// air from the camera out to its far edge, ((s + 1) / 32)^2 x 32 km.
+// The air between the camera and a point: 32 x 32 texels across the screen, 32 slices in depth, spread quadratically out to aerial_distance, so the near slices, where things are seen in detail, are thin. Slice s holds the air from the camera out to its far edge, ((s + 1) / 32)^2 x 32 km.
 static const float aerial_slices = 32.0;
 
 float aerial_slice_distance(float slice) {
@@ -350,9 +304,7 @@ float aerial_slice_distance(float slice) {
     return edge * edge * aerial_distance;
 }
 
-// The texture's depth coordinate for a point `distance` away, and how much
-// of the first slice's air it has: in front of slice 0's far edge, the air
-// is slice 0's, in proportion to the distance.
+// The texture's depth coordinate for a point `distance` away, and how much of the first slice's air it has: in front of slice 0's far edge, the air is slice 0's, in proportion to the distance.
 float aerial_depth(float distance, out float first_slice_share) {
     const float edge = sqrt(saturate(distance / aerial_distance)) * aerial_slices;
     first_slice_share = saturate(edge * edge);
@@ -385,21 +337,17 @@ Each table is one compute shader. They run in order, each reading the ones befor
 `game-engine/shaders/atmosphere.slang`:
 ```slang
 // The atmosphere's lookup tables (atmosphere.slangh), in compute shaders:
-//   transmittanceMain  how much light crosses the atmosphere, from any
-//                      height and angle: once
-//   multiscatterMain   the light scattered more than once: once, from the
-//                      transmittance
+//   transmittanceMain  how much light crosses the atmosphere, from any height and angle: once
+//   multiscatterMain   the light scattered more than once: once, from the transmittance
 //   skyViewMain        the sky around the camera: every frame
-//   aerialMain         the air between the camera and the scene, as two
-//                      volumes over the view: every frame
-//   skyCubeMain        the sky, for lighting, into the environment's sky
-//                      cube, whenever the sun moves
+//   aerialMain         the air between the camera and the scene, as two volumes over the view: every frame
+//   skyCubeMain        the sky, for lighting, into the environment's sky cube, whenever the sun moves
 
 #include "shared.slangh"
 #include "atmosphere.slangh"
 #include "cube.slangh"
 
-// --- Data shared with C++ (src/includes/shader_types.h) ----------------------
+// Data shared with C++ (src/includes/shader_types.h)
 
 struct AtmospherePushData {
     FrameData *frame;         // aerialMain: this frame's FrameData
@@ -429,9 +377,7 @@ SamplerState clamped() {
     return SamplerState.Handle(uint2(push.sampler, 0));
 }
 
-// The sky seen from `origin` in `direction`: the atmosphere up to its top,
-// or to the ground, and then the ground itself, lit by the sun and seen
-// through the air in between.
+// The sky seen from `origin` in `direction`: the atmosphere up to its top, or to the ground, and then the ground itself, lit by the sun and seen through the air in between.
 float3 sky_radiance(float3 origin, float3 direction, float3 sun) {
     const float ground = ground_hit(origin, direction);
     const float distance = ground > 0.0 ? ground : sphere_exit(origin, direction, atmosphere_radius);
@@ -450,7 +396,7 @@ float3 sky_radiance(float3 origin, float3 direction, float3 sun) {
     return radiance;
 }
 
-// --- Transmittance ---------------------------------------------------------------
+// Transmittance
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -483,16 +429,12 @@ void transmittanceMain(uint3 id : SV_DispatchThreadID) {
     table[id.xy] = float4(exp(-optical_depth), 1.0);
 }
 
-// --- Multiple scattering ----------------------------------------------------------
+// Multiple scattering
 
-// For each height and sun angle (Hillaire 2020, section 5.5): march in 64
-// directions spread evenly over the sphere, and add up
-//   L  the light scattered once toward the point, with an even (isotropic)
-//      phase function: the second bounce, if the point scatters it again,
-//   f  how much light the point would get back, as a share, from scattering
-//      that's itself spread evenly.
-// Every further bounce gives back f times the one before, so all of them
-// together are L (1 + f + f^2 + ...) = L / (1 - f). Per unit of sunlight.
+// For each height and sun angle (Hillaire 2020, section 5.5): march in 64 directions spread evenly over the sphere, and add up
+//   L  the light scattered once toward the point, with an even (isotropic) phase function: the second bounce, if the point scatters it again,
+//   f  how much light the point would get back, as a share, from scattering that's itself spread evenly.
+// Every further bounce gives back f times the one before, so all of them together are L (1 + f + f^2 + ...) = L / (1 - f). Per unit of sunlight.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void multiscatterMain(uint3 id : SV_DispatchThreadID) {
@@ -502,8 +444,7 @@ void multiscatterMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    // The texel's sun angle and height: multiscatter_uv, backwards. Texel
-    // centres span 0 to 1 exactly, ends included.
+    // The texel's sun angle and height: multiscatter_uv, backwards. Texel centres span 0 to 1 exactly, ends included.
     const float2 unit = float2(id.xy) / (multiscatter_size - 1.0);
     const float sun_mu = unit.x * 2.0 - 1.0;
     const float3 sun = float3(sqrt(max(1.0 - sun_mu * sun_mu, 0.0)), sun_mu, 0.0);
@@ -518,8 +459,7 @@ void multiscatterMain(uint3 id : SV_DispatchThreadID) {
 
     for (uint a = 0; a < rows; ++a) {
         for (uint b = 0; b < rows; ++b) {
-            // Evenly over the sphere: cosines of the polar angle evenly
-            // spaced, and the angle around evenly too.
+            // Evenly over the sphere: cosines of the polar angle evenly spaced, and the angle around evenly too.
             const float cos_theta = 1.0 - 2.0 * (float(a) + 0.5) / float(rows);
             const float sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
             const float phi = 2.0 * atmosphere_pi * (float(b) + 0.5) / float(rows);
@@ -556,8 +496,7 @@ void multiscatterMain(uint3 id : SV_DispatchThreadID) {
         }
     }
 
-    // The average over the 64 directions: their sum times the sphere's
-    // solid angle, shared among them, times the isotropic phase, 1 / 4 pi.
+    // The average over the 64 directions: their sum times the sphere's solid angle, shared among them, times the isotropic phase, 1 / 4 pi.
     const float directions = float(rows * rows);
     light /= directions;
     returned /= directions;
@@ -565,7 +504,7 @@ void multiscatterMain(uint3 id : SV_DispatchThreadID) {
     table[id.xy] = float4(light / (1.0 - returned), 1.0);
 }
 
-// --- The sky view ------------------------------------------------------------------
+// The sky view
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -576,8 +515,7 @@ void skyViewMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    // The table's frame has the sun in the plane of +X and +Y, at its real
-    // angle from the zenith.
+    // The table's frame has the sun in the plane of +X and +Y, at its real angle from the zenith.
     const float3 origin = camera_origin(push.altitude);
     const float sun_mu = push.sun_direction.y;
     const float3 sun = float3(sqrt(max(1.0 - sun_mu * sun_mu, 0.0)), sun_mu, 0.0);
@@ -586,12 +524,9 @@ void skyViewMain(uint3 id : SV_DispatchThreadID) {
     table[id.xy] = float4(sky_radiance(origin, direction, sun), 1.0);
 }
 
-// --- Aerial perspective ---------------------------------------------------------------
+// Aerial perspective
 
-// One thread per column of the volume: the ray from the camera through that
-// point of the screen, marched slice by slice, each slice's light and
-// transmittance added to the ones before it. The same light and
-// transmittance as the sky's, but stopping at each slice's far edge.
+// One thread per column of the volume: the ray from the camera through that point of the screen, marched slice by slice, each slice's light and transmittance added to the ones before it. The same light and transmittance as the sky's, but stopping at each slice's far edge.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void aerialMain(uint3 id : SV_DispatchThreadID) {
@@ -602,8 +537,7 @@ void aerialMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    // The ray through this column's point on the screen, from a point on the
-    // near plane: camera-relative, so its direction is its position.
+    // The ray through this column's point on the screen, from a point on the near plane: camera-relative, so its direction is its position.
     const float2 ndc = (float2(id.xy) + 0.5) / aerial_slices * 2.0 - 1.0;
     const float4 near_point = mul(push.frame.inverse_view_projection, float4(ndc, 1.0, 1.0));
     const float3 direction = normalize(near_point.xyz / near_point.w);
@@ -628,12 +562,9 @@ void aerialMain(uint3 id : SV_DispatchThreadID) {
     }
 }
 
-// --- The sky cube, for lighting ---------------------------------------------------------
+// The sky cube, for lighting
 
-// The sky in every direction from the camera, into mip 0 of the
-// environment's sky cube: one thread per texel, the six faces as the
-// dispatch's z. Thread 0 also works out the sunlight at the camera, for the
-// scene's sun.
+// The sky in every direction from the camera, into mip 0 of the environment's sky cube: one thread per texel, the six faces as the dispatch's z. Thread 0 also works out the sunlight at the camera, for the scene's sun.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void skyCubeMain(uint3 texel : SV_DispatchThreadID) {
@@ -658,13 +589,9 @@ void skyCubeMain(uint3 texel : SV_DispatchThreadID) {
 ```slang
 // Cube map directions, shared by environment.slang and atmosphere.slang.
 
-// --- Cube maps ---------------------------------------------------------------
+// Cube maps
 
-// The direction through texel `texel` of cube face `face`, `size` texels
-// across. Vulkan's cube faces are +X, -X, +Y, -Y, +Z, -Z, and each face's
-// u and v run along the axes its table in the Vulkan spec gives; this is
-// that table read backwards. u and v are -1..1 across the face, through
-// texel centers.
+// The direction through texel `texel` of cube face `face`, `size` texels across. Vulkan's cube faces are +X, -X, +Y, -Y, +Z, -Z, and each face's u and v run along the axes its table in the Vulkan spec gives; this is that table read backwards. u and v are -1..1 across the face, through texel centers.
 float3 cube_direction(uint3 texel, uint size) {
     const float2 uv = (float2(texel.xy) + 0.5) / float(size) * 2.0 - 1.0;
 
@@ -684,15 +611,13 @@ float3 cube_direction(uint3 texel, uint size) {
 
 `game-engine/shaders/environment.slang`:
 ```slang
-// Compute shaders that build the environment the scene is lit by, from a
-// sky cube: atmosphere.slang's skyCubeMain renders the simulated sky into it,
-// and this file's
+// Compute shaders that build the environment the scene is lit by, from a sky cube: atmosphere.slang's skyCubeMain renders the simulated sky into it, and this file's
 //   equirectMain    an HDR photograph of the sky, projected into the sky cube
 //   irradianceMain  the sky's diffuse light, as spherical harmonics
 //   prefilterMain   the sky's specular light, blurred per roughness
 //   brdfLutMain     the BRDF table the specular light is scaled by
 
-// --- Data shared with C++ (src/includes/shader_types.h) ----------------------
+// Data shared with C++ (src/includes/shader_types.h)
 
 struct EnvironmentInfo {
     float3 irradiance_sh[9];
@@ -729,16 +654,12 @@ SamplerState clamp_sampler() {
     return SamplerState.Handle(uint2(push.sampler, 0));
 }
 
-// --- An HDR photograph of the sky ----------------------------------------------
+// An HDR photograph of the sky
 
-// The photograph's values are relative: a camera records light, not its
-// units. This sets how bright a stored 1.0 is, in nits; with it, the
-// kloppenheim sky's average is about that of an overcast evening.
+// The photograph's values are relative: a camera records light, not its units. This sets how bright a stored 1.0 is, in nits; with it, the kloppenheim sky's average is about that of an overcast evening.
 static const float photograph_nits = 2000.0;
 
-// Projects an equirectangular image (longitude across, latitude down: the
-// usual layout for sky photographs) into mip 0 of the sky cube. The file's
-// values are relative, so photograph_nits turns them into nits.
+// Projects an equirectangular image (longitude across, latitude down: the usual layout for sky photographs) into mip 0 of the sky cube. The file's values are relative, so photograph_nits turns them into nits.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void equirectMain(uint3 texel : SV_DispatchThreadID) {
@@ -748,25 +669,19 @@ void equirectMain(uint3 texel : SV_DispatchThreadID) {
 
     const float3 d = cube_direction(texel, push.size);
 
-    // Longitude 0 (the image's center) looks down -Z; latitude runs from
-    // straight up (top row) to straight down (bottom row).
+    // Longitude 0 (the image's center) looks down -Z; latitude runs from straight up (top row) to straight down (bottom row).
     const float2 uv = float2(atan2(d.x, -d.z) / (2.0 * pi) + 0.5, acos(clamp(d.y, -1.0, 1.0)) / pi);
 
     const Texture2D image = Texture2D.Handle(uint2(push.source, 0));
     const float3 radiance = image.SampleLevel(clamp_sampler(), uv, 0.0).rgb * photograph_nits;
 
-    // In nits, the brightest texels can pass 65504, the largest 16-bit float
-    // the cube can hold; what the GPU stores instead isn't defined, and an
-    // infinity would spread into the mips and the lighting. Clamp it.
+    // In nits, the brightest texels can pass 65504, the largest 16-bit float the cube can hold; what the GPU stores instead isn't defined, and an infinity would spread into the mips and the lighting. Clamp it.
     storage_target()[texel] = float4(min(radiance, 65504.0), 1.0);
 }
 
-// --- Diffuse light: spherical harmonics ----------------------------------------
+// Diffuse light: spherical harmonics
 
-// A diffuse surface gathers light from its whole hemisphere, so what it
-// receives (irradiance) changes slowly with its normal. Nine spherical
-// harmonics, the 3D equivalent of a few Fourier terms, capture it to within
-// a few percent (Ramamoorthi and Hanrahan, 2001).
+// A diffuse surface gathers light from its whole hemisphere, so what it receives (irradiance) changes slowly with its normal. Nine spherical harmonics, the 3D equivalent of a few Fourier terms, capture it to within a few percent (Ramamoorthi and Hanrahan, 2001).
 
 // The nine real spherical harmonics, bands 0 to 2, at unit vector n.
 void sh_basis(float3 n, out float basis[9]) {
@@ -786,11 +701,7 @@ static const uint irradiance_face_size = 32;
 
 groupshared float3 partial_sh[irradiance_threads][9];
 
-// One workgroup projects the sky onto the nine harmonics. It reads the sky
-// cube at the mip level that's 32 texels across (a detailed sky only blurs
-// into irradiance anyway), each texel weighted by the solid angle it covers.
-// The sum is then convolved with the cosine lobe a diffuse surface sees,
-// which in this basis is just a factor per band: pi, 2pi/3 and pi/4.
+// One workgroup projects the sky onto the nine harmonics. It reads the sky cube at the mip level that's 32 texels across (a detailed sky only blurs into irradiance anyway), each texel weighted by the solid angle it covers. The sum is then convolved with the cosine lobe a diffuse surface sees, which in this basis is just a factor per band: pi, 2pi/3 and pi/4.
 [shader("compute")]
 [numthreads(irradiance_threads, 1, 1)]
 void irradianceMain(uint thread : SV_GroupIndex) {
@@ -806,8 +717,7 @@ void irradianceMain(uint thread : SV_GroupIndex) {
         const uint3 texel = uint3(i % size, (i / size) % size, i / (size * size));
         const float3 direction = cube_direction(texel, size);
 
-        // A texel at (u, v) on a face one unit away covers (2 / size)^2 of
-        // area, seen at a slant: its solid angle shrinks by (1 + u^2 + v^2)^1.5.
+        // A texel at (u, v) on a face one unit away covers (2 / size)^2 of area, seen at a slant: its solid angle shrinks by (1 + u^2 + v^2)^1.5.
         const float2 uv = (float2(texel.xy) + 0.5) / float(size) * 2.0 - 1.0;
         const float solid_angle = 4.0 / (size * size) / pow(1.0 + dot(uv, uv), 1.5);
 
@@ -844,7 +754,7 @@ void irradianceMain(uint thread : SV_GroupIndex) {
     }
 }
 
-// --- Specular light: prefiltering -----------------------------------------------
+// Specular light: prefiltering
 
 // The GGX distribution, as in mesh.slang.
 float distribution_ggx(float n_dot_h, float alpha) {
@@ -853,14 +763,12 @@ float distribution_ggx(float n_dot_h, float alpha) {
     return alpha2 / (pi * f * f);
 }
 
-// A low-discrepancy sequence: point i of n, spread evenly over the unit
-// square. Reversing the bits of i gives the second coordinate.
+// A low-discrepancy sequence: point i of n, spread evenly over the unit square. Reversing the bits of i gives the second coordinate.
 float2 hammersley(uint i, uint n) {
     return float2(float(i) / float(n), float(reversebits(i)) * 2.3283064365386963e-10);
 }
 
-// A half vector around `normal`, distributed like GGX's microfacets: more of
-// them where D is high. `xi` picks which one.
+// A half vector around `normal`, distributed like GGX's microfacets: more of them where D is high. `xi` picks which one.
 float3 sample_ggx(float2 xi, float3 normal, float alpha) {
     const float phi = 2.0 * pi * xi.x;
     const float cos_theta = sqrt((1.0 - xi.y) / (1.0 + (alpha * alpha - 1.0) * xi.y));
@@ -874,14 +782,9 @@ float3 sample_ggx(float2 xi, float3 normal, float alpha) {
     return normalize(tangent * h.x + bitangent * h.y + normal * h.z);
 }
 
-// One mip level of the specular cube: the sky as a surface of `roughness`
-// reflects it, looking straight at it (n = v = r, the split-sum assumption).
-// Rougher levels are smaller: their light is blurrier.
-//   - Importance sampling: 128 directions, chosen where GGX reflects the
-//     most light, weighted by n.l.
-//   - Filtered importance sampling (Krivanek and Colbert, 2008): each
-//     sample reads the sky at a mip level matching the solid angle it stands
-//     for, so a few samples cover the lobe with little visible noise.
+// One mip level of the specular cube: the sky as a surface of `roughness` reflects it, looking straight at it (n = v = r, the split-sum assumption). Rougher levels are smaller: their light is blurrier.
+//   - Importance sampling: 128 directions, chosen where GGX reflects the most light, weighted by n.l.
+//   - Filtered importance sampling (Krivanek and Colbert, 2008): each sample reads the sky at a mip level matching the solid angle it stands for, so a few samples cover the lobe with little visible noise.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void prefilterMain(uint3 texel : SV_DispatchThreadID) {
@@ -925,7 +828,7 @@ void prefilterMain(uint3 texel : SV_DispatchThreadID) {
     storage_target()[texel] = float4(sum / max(weight, 1e-6), 1.0);
 }
 
-// --- The BRDF table ------------------------------------------------------------------
+// The BRDF table
 
 // Smith's height-correlated visibility, as in mesh.slang.
 float visibility_smith(float n_dot_l, float n_dot_v, float alpha) {
@@ -936,9 +839,7 @@ float visibility_smith(float n_dot_l, float n_dot_v, float alpha) {
     return sum > 0.0 ? 0.5 / sum : 0.0;
 }
 
-// The split sum's second half: how much light the specular BRDF reflects
-// overall, for a view angle (n.v across) and a roughness (down), as a scale
-// and a bias on the reflectance at normal incidence, F0:
+// The split sum's second half: how much light the specular BRDF reflects overall, for a view angle (n.v across) and a roughness (down), as a scale and a bias on the reflectance at normal incidence, F0:
 //     reflected = F0 * scale + bias
 // Computed once, by importance-sampling GGX like the prefilter.
 [shader("compute")]
@@ -968,8 +869,7 @@ void brdfLutMain(uint3 texel : SV_DispatchThreadID) {
             const float n_dot_h = max(h.z, 0.0);
             const float v_dot_h = max(dot(view, h), 0.0);
 
-            // BRDF x n.l / pdf, with Fresnel left out: V * D * n.l over
-            // D * n.h / (4 v.h).
+            // BRDF x n.l / pdf, with Fresnel left out: V * D * n.l over D * n.h / (4 v.h).
             const float reflected = visibility_smith(n_dot_l, n_dot_v, alpha) * 4.0 * n_dot_l * v_dot_h / max(n_dot_h, 1e-6);
 
             // Schlick's Fresnel, F0 + (1 - F0) * f, split into F0's share and the rest.
@@ -1006,19 +906,13 @@ The new compute shaders need push data, and the scene's shaders need to find the
 #include <cstddef>
 #include <cstdint>
 
-// C++ mirrors of the structs in the shaders (shaders/*.slang).
-// The GPU reads these bytes as they are, so the two sides must agree on every
-// size and offset; the static_asserts catch a mismatch at compile time.
+// C++ mirrors of the structs in the shaders (shaders/*.slang). The GPU reads these bytes as they are, so the two sides must agree on every size and offset; the static_asserts catch a mismatch at compile time.
 
-// --- Vertex ------------------------------------------------------------------
+// Vertex
 
-// Slang lays out data behind a pointer like C: each member aligned only to
-// the size of its scalar type. Every member here is made of 4-byte floats,
-// so nothing needs padding, and glm agrees member for member. All of these
-// structs are packed tight like this: no padding anywhere.
+// Slang lays out data behind a pointer like C: each member aligned only to the size of its scalar type. Every member here is made of 4-byte floats, so nothing needs padding, and glm agrees member for member. All of these structs are packed tight like this: no padding anywhere.
 //   - A normal of (0, 0, 0) means the file had none (see mesh.slang).
-//   - A tangent of (0, 0, 0, 0) means the file had none; the shader then
-//     works the tangent out from the texture coordinates.
+//   - A tangent of (0, 0, 0, 0) means the file had none; the shader then works the tangent out from the texture coordinates.
 struct Vertex {
     glm::vec3 position;
     glm::vec3 normal;
@@ -1034,13 +928,9 @@ static_assert(offsetof(Vertex, uv0) == 40);
 static_assert(offsetof(Vertex, uv1) == 48);
 static_assert(offsetof(Vertex, color) == 56);
 
-// --- Per-draw data -----------------------------------------------------------
+// Per-draw data
 
-// One per draw, in a GPU buffer the shaders index. A draw is placed in a
-// world cell (cells.h): its model matrix moves the primitive into the cell,
-// measured from the cell's corner. A shadow ray that hits a draw's triangle
-// finds the triangle's vertices through first_index and vertex_offset, as
-// drawIndexed does. The cull tests the draw's box.
+// One per draw, in a GPU buffer the shaders index. A draw is placed in a world cell (cells.h): its model matrix moves the primitive into the cell, measured from the cell's corner. A shadow ray that hits a draw's triangle finds the triangle's vertices through first_index and vertex_offset, as drawIndexed does. The cull tests the draw's box.
 struct DrawData {
     glm::mat4 model;            // this primitive's space -> its cell, from the cell's corner
     glm::mat4 normal_matrix;    // transposed inverse of model: keeps normals perpendicular under any scale
@@ -1058,19 +948,16 @@ static_assert(offsetof(DrawData, material) == 128);
 static_assert(offsetof(DrawData, cell) == 140);
 static_assert(offsetof(DrawData, bounds_min) == 152);
 
-// --- Materials ---------------------------------------------------------------
+// Materials
 
-// glTF's three ways of using a material's alpha. Each gets its own pipeline,
-// and the shader reads the mode as a specialization constant.
+// glTF's three ways of using a material's alpha. Each gets its own pipeline, and the shader reads the mode as a specialization constant.
 enum class AlphaMode : std::uint32_t {
     opaque,  // alpha is ignored
     mask,    // fully opaque or fully transparent: cut out below alpha_cutoff
     blend,   // see-through: blended over what's behind it
 };
 
-// Which texture a material slot samples, with which sampler and which set of
-// texture coordinates. Heap indices: texture 0 is a 1x1 white texture and
-// sampler 0 the default sampler, for slots the file leaves empty.
+// Which texture a material slot samples, with which sampler and which set of texture coordinates. Heap indices: texture 0 is a 1x1 white texture and sampler 0 the default sampler, for slots the file leaves empty.
 struct TextureSlot {
     std::uint32_t texture = 0;  // resource heap index
     std::uint32_t sampler = 0;  // sampler heap index
@@ -1079,8 +966,7 @@ struct TextureSlot {
 
 static_assert(sizeof(TextureSlot) == 12);
 
-// A glTF metallic-roughness material: every factor and texture of the core
-// spec. Each texture is multiplied by its factor; see mesh.slang for how.
+// A glTF metallic-roughness material: every factor and texture of the core spec. Each texture is multiplied by its factor; see mesh.slang for how.
 struct Material {
     glm::vec4 base_color_factor;     // linear RGBA
     glm::vec3 emissive_factor;       // linear RGB light the surface gives off
@@ -1106,18 +992,16 @@ static_assert(offsetof(Material, alpha_mode) == 52);
 static_assert(offsetof(Material, base_color) == 56);
 static_assert(offsetof(Material, emissive) == 104);
 
-// --- Lights ------------------------------------------------------------------
+// Lights
 
-// KHR_lights_punctual's three kinds of light. "Punctual" means infinitely
-// small: all of a light's power comes from one point, or one direction.
+// KHR_lights_punctual's three kinds of light. "Punctual" means infinitely small: all of a light's power comes from one point, or one direction.
 enum class LightType : std::uint32_t {
     directional,  // like the sun: parallel rays, intensity in lux
     point,        // shines in every direction, intensity in candela
     spot,         // a point light limited to a cone, intensity in candela
 };
 
-// One light from the file, placed in a world cell (cells.h); its direction is
-// along the world's axes.
+// One light from the file, placed in a world cell (cells.h); its direction is along the world's axes.
 struct Light {
     glm::vec3 offset;     // point and spot lights: where in `cell` the light is (cells.h)
     float range;          // distance where the light fades to nothing; 0 for no limit
@@ -1135,12 +1019,9 @@ static_assert(offsetof(Light, intensity) == 32);
 static_assert(offsetof(Light, cell) == 48);
 static_assert(offsetof(Light, type) == 60);
 
-// --- Views -------------------------------------------------------------------
+// Views
 
-// What the fragment shader outputs: the shaded scene, one material input on
-// its own, for checking that each one loaded correctly, the ambient
-// occlusion, or how much of the sun's light reaches each point. Keys 1-9
-// and 0 pick one.
+// What the fragment shader outputs: the shaded scene, one material input on its own, for checking that each one loaded correctly, the ambient occlusion, or how much of the sun's light reaches each point. Keys 1-9 and 0 pick one.
 enum class View : std::uint32_t {
     lit,
     base_color,
@@ -1154,14 +1035,11 @@ enum class View : std::uint32_t {
     shadow,             // the sun's light that gets through: white all of it, black none
 };
 
-// --- The environment -----------------------------------------------------------
+// The environment
 
-// What the environment's compute shaders tell the CPU and the scene shader
-// about the sky, in host-visible memory both can read.
-//   - irradiance_sh: the light falling on a surface from the whole sky, as 9
-//     spherical harmonics coefficients per color channel (see environment.slang).
-//   - sun_illuminance: the sun's light at the ground after the atmosphere, in
-//     lux on a surface facing it; 0 when the sun is down or the sky is an image.
+// What the environment's compute shaders tell the CPU and the scene shader about the sky, in host-visible memory both can read.
+//   - irradiance_sh: the light falling on a surface from the whole sky, as 9 spherical harmonics coefficients per color channel (see environment.slang).
+//   - sun_illuminance: the sun's light at the ground after the atmosphere, in lux on a surface facing it; 0 when the sun is down or the sky is an image.
 struct EnvironmentInfo {
     std::array<glm::vec3, 9> irradiance_sh;
     glm::vec3 sun_illuminance;
@@ -1169,18 +1047,12 @@ struct EnvironmentInfo {
 
 static_assert(sizeof(EnvironmentInfo) == 120);
 
-// --- Per-frame data -----------------------------------------------------------
+// Per-frame data
 
-// Everything the shaders need that's the same for every draw in a frame. Each
-// frame in flight has its own copy in host-visible memory, rewritten by the
-// CPU before the frame is recorded. Push data points at it.
-//   - Lighting values are physical: lux for illuminance, nits (candela per
-//     square meter) for the brightness of the sky.
-//   - Pointers come right after the matrices, so all of them land on 8-byte
-//     boundaries with no padding.
-// Shaders work in camera-relative space: the world's axes, with the camera
-// at the origin. A position given by a cell and an offset (cells.h) is moved
-// into it by subtracting the camera's cell and offset.
+// Everything the shaders need that's the same for every draw in a frame. Each frame in flight has its own copy in host-visible memory, rewritten by the CPU before the frame is recorded. Push data points at it.
+//   - Lighting values are physical: lux for illuminance, nits (candela per square meter) for the brightness of the sky.
+//   - Pointers come right after the matrices, so all of them land on 8-byte boundaries with no padding.
+// Shaders work in camera-relative space: the world's axes, with the camera at the origin. A position given by a cell and an offset (cells.h) is moved into it by subtracting the camera's cell and offset.
 struct FrameData {
     glm::mat4 view_projection;          // camera-relative space -> clip space
     glm::mat4 inverse_view_projection;  // clip space -> camera-relative space
@@ -1228,21 +1100,18 @@ static_assert(offsetof(FrameData, camera_offset) == 272);
 static_assert(offsetof(FrameData, tlas_offset) == 284);
 static_assert(offsetof(FrameData, sky_view) == 296);
 
-// --- Push data ---------------------------------------------------------------
+// Push data
 
-// Written with vkCmdPushDataEXT before each pipeline's draws: where this
-// frame's data is. Which DrawData an instance draws, the vertex shader looks
-// up among the cull's instances.
+// Written with vkCmdPushDataEXT before each pipeline's draws: where this frame's data is. Which DrawData an instance draws, the vertex shader looks up among the cull's instances.
 struct PushData {
     vk::DeviceAddress frame;
 };
 
 static_assert(sizeof(PushData) == 8);
 
-// --- GPU culling (culling.h, cull.slang) ---------------------------------------
+// GPU culling (culling.h, cull.slang)
 
-// Draws of one primitive in one draw list, a run of the cull's order: drawn
-// as one instanced command, of as many instances as are in view.
+// Draws of one primitive in one draw list, a run of the cull's order: drawn as one instanced command, of as many instances as are in view.
 struct DrawGroup {
     std::uint32_t first;          // where its draws start in the order
     std::uint32_t count;          // how many draws
@@ -1254,8 +1123,7 @@ struct DrawGroup {
 
 static_assert(sizeof(DrawGroup) == 24);
 
-// A draw list's groups, a run of the group table. Each group has one command
-// slot, so it's the list's run of commands too.
+// A draw list's groups, a run of the group table. Each group has one command slot, so it's the list's run of commands too.
 struct DrawListRange {
     std::uint32_t first_group = 0;
     std::uint32_t group_count = 0;
@@ -1289,22 +1157,19 @@ struct CullPushData {
 
 static_assert(sizeof(CullPushData) == 16);
 
-// The tone-mapping pass's push data: which resource heap slot holds the HDR
-// image, and the view, so material views can skip tone mapping.
+// The tone-mapping pass's push data: which resource heap slot holds the HDR image, and the view, so material views can skip tone mapping.
 struct TonemapPushData {
     std::uint32_t hdr_image;
     View view;
 };
 
-// The transparency composite's push data (composite.slang): the resource heap
-// slots of the transparency pass's two sums.
+// The transparency composite's push data (composite.slang): the resource heap slots of the transparency pass's two sums.
 struct CompositePushData {
     std::uint32_t accum;
     std::uint32_t reveal;
 };
 
-// The environment compute shaders' push data. Each dispatch sets only what
-// its shader reads, so every member has a default.
+// The environment compute shaders' push data. Each dispatch sets only what its shader reads, so every member has a default.
 struct EnvironmentPushData {
     vk::DeviceAddress info = 0;     // where the EnvironmentInfo goes
     std::uint32_t source = 0;       // resource heap slot to read
@@ -1318,11 +1183,7 @@ struct EnvironmentPushData {
 static_assert(sizeof(EnvironmentPushData) == 32);
 static_assert(offsetof(EnvironmentPushData, size) == 16);
 
-// The atmosphere's compute shaders' push data (atmosphere.slang). Each step
-// reads what it needs: the per-frame ones the camera's height and the sun,
-// the aerial perspective the frame's view. Push data follows std430 rules,
-// where a vec3 starts on a 16-byte boundary: the two pointers fill the
-// first 16 bytes, so sun_direction lands on one.
+// The atmosphere's compute shaders' push data (atmosphere.slang). Each step reads what it needs: the per-frame ones the camera's height and the sun, the aerial perspective the frame's view. Push data follows std430 rules, where a vec3 starts on a 16-byte boundary: the two pointers fill the first 16 bytes, so sun_direction lands on one.
 struct AtmospherePushData {
     vk::DeviceAddress frame = 0;       // aerial perspective: this frame's FrameData
     vk::DeviceAddress info = 0;        // the sky cube: where the sunlight at the camera goes
@@ -1340,9 +1201,7 @@ static_assert(sizeof(AtmospherePushData) == 56);
 static_assert(offsetof(AtmospherePushData, sun_direction) == 16);
 static_assert(offsetof(AtmospherePushData, transmittance) == 32);
 
-// The ambient occlusion compute shaders' push data (ao.slang), the same for
-// all four steps. The half-resolution images and `source` and `target` are
-// storage images; each step reads and writes the ones it needs.
+// The ambient occlusion compute shaders' push data (ao.slang), the same for all four steps. The half-resolution images and `source` and `target` are storage images; each step reads and writes the ones it needs.
 struct AoPushData {
     vk::DeviceAddress frame = 0;   // this frame's FrameData
     std::uint32_t depth = 0;       // resource heap slot: the depth buffer, sampled
@@ -1364,16 +1223,9 @@ static_assert(sizeof(AoPushData) == 56);
 
 `game-engine/shaders/shared.slangh`:
 ```slang
-// The structs every scene shader shares with C++ (src/includes/shader_types.h),
-// and a few helpers, included by mesh.slang, background.slang, ao.slang and
-// cull.slang.
-// Each of those declares its own push data block. A .slangh file isn't
-// compiled on its own: CMakeLists.txt only compiles .slang files.
+// The structs every scene shader shares with C++ (src/includes/shader_types.h), and a few helpers, included by mesh.slang, background.slang, ao.slang and cull.slang. Each of those declares its own push data block. A .slangh file isn't compiled on its own: CMakeLists.txt only compiles .slang files.
 
-// Data behind a pointer is laid out like C: each member aligned only to the
-// size of its scalar type. Every member here is made of 4-byte floats, so
-// there's no padding, and this matches the C++ Vertex exactly (72 bytes).
-// The other structs follow the same rule and match theirs.
+// Data behind a pointer is laid out like C: each member aligned only to the size of its scalar type. Every member here is made of 4-byte floats, so there's no padding, and this matches the C++ Vertex exactly (72 bytes). The other structs follow the same rule and match theirs.
 struct Vertex {
     float3 position;
     float3 normal;   // (0, 0, 0) when the file had no normals
@@ -1452,8 +1304,7 @@ struct EnvironmentInfo {
     float3 sun_illuminance;   // lux at the ground; 0 for a photographed sky
 };
 
-// The same for every draw in a frame. Natural layout, like the C++ struct:
-// the pointers land on 8-byte boundaries, right after the matrices.
+// The same for every draw in a frame. Natural layout, like the C++ struct: the pointers land on 8-byte boundaries, right after the matrices.
 struct FrameData {
     float4x4 view_projection;          // camera-relative space -> clip space
     float4x4 inverse_view_projection;  // clip space -> camera-relative space
@@ -1487,15 +1338,12 @@ struct FrameData {
     uint atmosphere;                   // 1: the simulated sky and its haze; 0: the photograph
 };
 
-// --- Camera-relative positions ---------------------------------------------------
+// Camera-relative positions
 
 // The side of a world cell, in metres: cells.h's cell_size.
 static const float cell_size = 64.0;
 
-// A position given as a world cell and an offset in it (cells.h), relative
-// to the camera. The cells are subtracted as integers, exactly; only their
-// difference, and the offsets' difference, become floats. Near the camera,
-// both are small, and keep a float's full precision anywhere in the world.
+// A position given as a world cell and an offset in it (cells.h), relative to the camera. The cells are subtracted as integers, exactly; only their difference, and the offsets' difference, become floats. Near the camera, both are small, and keep a float's full precision anywhere in the world.
 float3 camera_relative(FrameData *frame, int3 cell, float3 offset) {
     return float3(cell - frame.camera_cell) * cell_size + (offset - frame.camera_offset);
 }
@@ -1505,12 +1353,9 @@ struct PushData {
     FrameData *frame;  // this frame's data
 };
 
-// --- Normals in two numbers ------------------------------------------------------
+// Normals in two numbers
 
-// Octahedral encoding (Meyer et al. 2010): a unit vector is projected onto
-// the octahedron |x| + |y| + |z| = 1, whose lower half is folded up over the
-// upper; flattened, that's a square, so two numbers in -1..1 hold any
-// direction, evenly enough for 16-bit floats.
+// Octahedral encoding (Meyer et al. 2010): a unit vector is projected onto the octahedron |x| + |y| + |z| = 1, whose lower half is folded up over the upper; flattened, that's a square, so two numbers in -1..1 hold any direction, evenly enough for 16-bit floats.
 float2 encode_octahedral(float3 n) {
     n /= abs(n.x) + abs(n.y) + abs(n.z);
     const float2 folded = (1.0 - abs(n.yx)) * float2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
@@ -1556,7 +1401,7 @@ The tables are images like the environment's others, with slots in the resource 
 #include <cstdint>
 #include <filesystem>
 
-// --- The environment ---------------------------------------------------------
+// The environment
 
 // Where the scene's sky comes from.
 enum class SkySource {
@@ -1564,8 +1409,7 @@ enum class SkySource {
     photograph,  // an HDR image of a real sky; its sun is already in the image
 };
 
-// An image and its memory. There's no VkImageView: shaders reach it through
-// descriptor heap slots, written from view descriptions.
+// An image and its memory. There's no VkImageView: shaders reach it through descriptor heap slots, written from view descriptions.
 struct GpuImage {
     vk::raii::DeviceMemory memory = nullptr;
     vk::raii::Image handle = nullptr;
@@ -1588,9 +1432,7 @@ constexpr std::uint32_t sky_view_width = 192;        // around the up axis
 constexpr std::uint32_t sky_view_height = 108;       // from the zenith to the nadir
 constexpr std::uint32_t aerial_size = 32;            // across, down and in depth
 
-// The resource heap slots the environment uses, consecutive from `first`:
-// sampled descriptors for reading, storage descriptors for compute shaders
-// to write.
+// The resource heap slots the environment uses, consecutive from `first`: sampled descriptors for reading, storage descriptors for compute shaders to write.
 struct EnvironmentSlots {
     std::uint32_t sky_cube;          // sampled, every mip
     std::uint32_t sky_target;        // storage, mip 0
@@ -1615,11 +1457,7 @@ struct EnvironmentSlots {
 
 constexpr std::uint32_t environment_slot_count = 6 + specular_mips + 10;
 
-// The sky in its forms for lighting: a full-detail cube map, its diffuse
-// light as spherical harmonics (in `info`), a cube prefiltered for specular
-// light, and the BRDF table that goes with it. And the atmosphere's tables:
-// transmittance and multiple scattering, computed once, and the sky view and
-// aerial perspective, every frame.
+// The sky in its forms for lighting: a full-detail cube map, its diffuse light as spherical harmonics (in `info`), a cube prefiltered for specular light, and the BRDF table that goes with it. And the atmosphere's tables: transmittance and multiple scattering, computed once, and the sky view and aerial perspective, every frame.
 struct Environment {
     GpuImage sky_cube;
     GpuImage specular_cube;
@@ -1653,10 +1491,7 @@ struct Environment {
     vk::raii::CommandBuffer commands = nullptr;
 };
 
-// Creates the images and pipelines, writes their descriptors from slot
-// `first_slot` on, loads the HDR photograph at `photograph`, and computes
-// what never changes: the BRDF table and the atmosphere's transmittance and
-// multiple scattering. Call update_environment before drawing.
+// Creates the images and pipelines, writes their descriptors from slot `first_slot` on, loads the HDR photograph at `photograph`, and computes what never changes: the BRDF table and the atmosphere's transmittance and multiple scattering. Call update_environment before drawing.
 Environment create_environment(
     const vk::raii::Device &device,
     const GpuChoice &gpu,
@@ -1667,10 +1502,7 @@ Environment create_environment(
     const std::filesystem::path &photograph
 );
 
-// Rebuilds the sky from `source`, with the sun toward `sun_direction` and
-// the camera `altitude` metres above the ground, then its diffuse and
-// specular light. Waits for the GPU before and after, so it must not be
-// called while a frame is being recorded.
+// Rebuilds the sky from `source`, with the sun toward `sun_direction` and the camera `altitude` metres above the ground, then its diffuse and specular light. Waits for the GPU before and after, so it must not be called while a frame is being recorded.
 void update_environment(
     Environment &environment,
     const vk::raii::Device &device,
@@ -1681,9 +1513,7 @@ void update_environment(
     float altitude
 );
 
-// Records the atmosphere's per-frame tables, the sky view and the aerial
-// perspective, for the frame whose FrameData is at `frame`. On return both
-// are ready for fragment shaders.
+// Records the atmosphere's per-frame tables, the sky view and the aerial perspective, for the frame whose FrameData is at `frame`. On return both are ready for fragment shaders.
 void record_atmosphere(
     const vk::raii::CommandBuffer &commands,
     const Environment &environment,
@@ -1692,8 +1522,7 @@ void record_atmosphere(
     float altitude
 );
 
-// The sky's irradiance, in lux, on a surface facing `normal`: the spherical
-// harmonics evaluated on the CPU, for the light meter.
+// The sky's irradiance, in lux, on a surface facing `normal`: the spherical harmonics evaluated on the CPU, for the light meter.
 glm::vec3 sky_irradiance(const EnvironmentInfo &info, glm::vec3 normal);
 ```
 
@@ -1713,291 +1542,275 @@ glm::vec3 sky_irradiance(const EnvironmentInfo &info, glm::vec3 normal);
 
 namespace {
 
-// --- Images ------------------------------------------------------------------
+    // Images
 
-GpuImage create_gpu_image(const vk::raii::Device &device, const GpuChoice &gpu, const vk::ImageCreateInfo &info) {
-    GpuImage image;
-    image.handle = vk::raii::Image(device, info);
+    GpuImage create_gpu_image(const vk::raii::Device &device, const GpuChoice &gpu, const vk::ImageCreateInfo &info) {
+        GpuImage image;
+        image.handle = vk::raii::Image(device, info);
 
-    const vk::MemoryRequirements requirements = image.handle.getMemoryRequirements();
+        const vk::MemoryRequirements requirements = image.handle.getMemoryRequirements();
 
-    image.memory = vk::raii::DeviceMemory(device, vk::MemoryAllocateInfo{
-        .allocationSize = requirements.size,
-        .memoryTypeIndex = find_memory_type(gpu, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal),
-    });
+        image.memory = vk::raii::DeviceMemory(device, vk::MemoryAllocateInfo{
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = find_memory_type(gpu, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal),
+        });
 
-    image.handle.bindMemory(*image.memory, 0);
-    return image;
-}
+        image.handle.bindMemory(*image.memory, 0);
+        return image;
+    }
 
-// A cube map: a 2D image with 6 array layers that may be viewed as a cube.
-GpuImage create_cube(const vk::raii::Device &device, const GpuChoice &gpu, std::uint32_t size, std::uint32_t mips, vk::ImageUsageFlags usage) {
-    return create_gpu_image(device, gpu, vk::ImageCreateInfo{
-        .flags = vk::ImageCreateFlagBits::eCubeCompatible,
-        .imageType = vk::ImageType::e2D,
-        .format = environment_format,
-        .extent = {size, size, 1},
-        .mipLevels = mips,
-        .arrayLayers = 6,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        .usage = usage,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined,
-    });
-}
+    // A cube map: a 2D image with 6 array layers that may be viewed as a cube.
+    GpuImage create_cube(const vk::raii::Device &device, const GpuChoice &gpu, std::uint32_t size, std::uint32_t mips, vk::ImageUsageFlags usage) {
+        return create_gpu_image(device, gpu, vk::ImageCreateInfo{
+            .flags = vk::ImageCreateFlagBits::eCubeCompatible,
+            .imageType = vk::ImageType::e2D,
+            .format = environment_format,
+            .extent = {size, size, 1},
+            .mipLevels = mips,
+            .arrayLayers = 6,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = usage,
+            .sharingMode = vk::SharingMode::eExclusive,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        });
+    }
 
-// A 2D image, or a 3D one `depth` deep.
-GpuImage create_flat(
-    const vk::raii::Device &device,
-    const GpuChoice &gpu,
-    std::uint32_t width,
-    std::uint32_t height,
-    vk::ImageUsageFlags usage,
-    std::uint32_t depth = 1
-) {
-    return create_gpu_image(device, gpu, vk::ImageCreateInfo{
-        .imageType = depth > 1 ? vk::ImageType::e3D : vk::ImageType::e2D,
-        .format = environment_format,
-        .extent = {width, height, depth},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        .usage = usage,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined,
-    });
-}
+    // A 2D image, or a 3D one `depth` deep.
+    GpuImage create_flat(
+        const vk::raii::Device &device,
+        const GpuChoice &gpu,
+        std::uint32_t width,
+        std::uint32_t height,
+        vk::ImageUsageFlags usage,
+        std::uint32_t depth = 1
+    ) {
+        return create_gpu_image(device, gpu, vk::ImageCreateInfo{
+            .imageType = depth > 1 ? vk::ImageType::e3D : vk::ImageType::e2D,
+            .format = environment_format,
+            .extent = {width, height, depth},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = usage,
+            .sharingMode = vk::SharingMode::eExclusive,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        });
+    }
 
-// How shaders see an image: `type` (2D, 2D array, cube, 3D), from mip
-// `base_mip`, `mips` levels, all of its layers.
-vk::ImageViewCreateInfo view_of(const GpuImage &image, vk::ImageViewType type, std::uint32_t base_mip, std::uint32_t mips, std::uint32_t layers) {
-    return vk::ImageViewCreateInfo{
-        .image = *image.handle,
-        .viewType = type,
-        .format = environment_format,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = base_mip,
-            .levelCount = mips,
-            .baseArrayLayer = 0,
-            .layerCount = layers,
-        },
-    };
-}
-
-// --- Barriers ----------------------------------------------------------------
-
-// Moves mips [base_mip, base_mip + mips) of every layer of `image` between
-// layouts, after `src` work and before `dst` work.
-void barrier(
-    const vk::raii::CommandBuffer &commands,
-    const GpuImage &image,
-    vk::ImageLayout from,
-    vk::ImageLayout to,
-    vk::PipelineStageFlags2 src_stage,
-    vk::AccessFlags2 src_access,
-    vk::PipelineStageFlags2 dst_stage,
-    vk::AccessFlags2 dst_access,
-    std::uint32_t base_mip = 0,
-    std::uint32_t mips = vk::RemainingMipLevels
-) {
-    const vk::ImageMemoryBarrier2 image_barrier{
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-        .oldLayout = from,
-        .newLayout = to,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = *image.handle,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = base_mip,
-            .levelCount = mips,
-            .baseArrayLayer = 0,
-            .layerCount = vk::RemainingArrayLayers,
-        },
-    };
-
-    commands.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &image_barrier});
-}
-
-// Makes compute shaders' writes to memory, through pointers, visible to the
-// `dst` work: the CPU once the submission is done, or later shaders.
-void memory_barrier(const vk::raii::CommandBuffer &commands, vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access) {
-    const vk::MemoryBarrier2 memory{
-        .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-        .srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-    };
-
-    commands.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &memory});
-}
-
-// --- Submitting --------------------------------------------------------------
-
-// Records `record` into the environment's command buffer, submits it and
-// waits. The same command buffer is reset and reused every time rather than
-// allocated and freed like submit_and_wait's: these commands bind the
-// descriptor heaps, and the validation layer (1.4.341) wrongly reports
-// conflicting heap ranges after a command buffer that bound them is freed.
-void run(
-    const Environment &environment,
-    const vk::raii::Device &device,
-    const vk::raii::Queue &queue,
-    const std::function<void(const vk::raii::CommandBuffer&)> &record
-) {
-    const vk::raii::CommandBuffer &commands = environment.commands;
-
-    commands.reset();
-    commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-    record(commands);
-    commands.end();
-
-    const vk::raii::Fence done(device, vk::FenceCreateInfo{});
-    const vk::CommandBufferSubmitInfo command_info{.commandBuffer = *commands};
-
-    queue.submit2(vk::SubmitInfo2{
-        .commandBufferInfoCount = 1,
-        .pCommandBufferInfos = &command_info,
-    }, *done);
-
-    (void)device.waitForFences(*done, vk::True, std::numeric_limits<std::uint64_t>::max());
-}
-
-// --- Dispatching -------------------------------------------------------------
-
-// Runs `pipeline` over a `size` x `size` image with `layers` layers, one
-// thread per texel, in the shaders' 8 x 8 workgroups.
-void dispatch(
-    const vk::raii::CommandBuffer &commands,
-    const vk::raii::Pipeline &pipeline,
-    const EnvironmentPushData &push,
-    std::uint32_t layers
-) {
-    commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-    commands.pushDataEXT(vk::PushDataInfoEXT{
-        .offset = 0,
-        .data = {.address = &push, .size = sizeof(push)},
-    });
-
-    const std::uint32_t groups = (push.size + 7) / 8;
-    commands.dispatch(groups, groups, layers);
-}
-
-// Runs one of atmosphere.slang's steps over `width` x `height` x `depth`
-// threads, in its 8 x 8 workgroups.
-void dispatch_atmosphere(
-    const vk::raii::CommandBuffer &commands,
-    const vk::raii::Pipeline &pipeline,
-    const AtmospherePushData &push,
-    std::uint32_t width,
-    std::uint32_t height,
-    std::uint32_t depth = 1
-) {
-    commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-    commands.pushDataEXT(vk::PushDataInfoEXT{
-        .offset = 0,
-        .data = {.address = &push, .size = sizeof(push)},
-    });
-    commands.dispatch((width + 7) / 8, (height + 7) / 8, depth);
-}
-
-// Fills mips 1 and up of the sky cube from mip 0. Each level is the one above
-// shrunk to half size by a linearly filtered blit, all six faces at once.
-// On entry mip 0 is eTransferSrcOptimal and the rest eUndefined; on return
-// every mip is eShaderReadOnlyOptimal.
-void generate_sky_mips(const vk::raii::CommandBuffer &commands, const GpuImage &cube) {
-    barrier(commands, cube, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
-        vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone,
-        vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite, 1);
-
-    for (std::uint32_t mip = 1; mip < sky_cube_mips; ++mip) {
-        const auto from = static_cast<std::int32_t>(sky_cube_size >> (mip - 1));
-        const auto to = static_cast<std::int32_t>(sky_cube_size >> mip);
-
-        commands.blitImage(*cube.handle, vk::ImageLayout::eTransferSrcOptimal,
-            *cube.handle, vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageBlit{
-                .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = mip - 1, .baseArrayLayer = 0, .layerCount = 6},
-                .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{from, from, 1}},
-                .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = mip, .baseArrayLayer = 0, .layerCount = 6},
-                .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{to, to, 1}},
+    // How shaders see an image: `type` (2D, 2D array, cube, 3D), from mip `base_mip`, `mips` levels, all of its layers.
+    vk::ImageViewCreateInfo view_of(const GpuImage &image, vk::ImageViewType type, std::uint32_t base_mip, std::uint32_t mips, std::uint32_t layers) {
+        return vk::ImageViewCreateInfo{
+            .image = *image.handle,
+            .viewType = type,
+            .format = environment_format,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = base_mip,
+                .levelCount = mips,
+                .baseArrayLayer = 0,
+                .layerCount = layers,
             },
-            vk::Filter::eLinear);
-
-        // This level is the next blit's source.
-        barrier(commands, cube, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
-            vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite,
-            vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferRead, mip, 1);
+        };
     }
 
-    barrier(commands, cube, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eTransferRead,
-        vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eFragmentShader,
-        vk::AccessFlagBits2::eShaderSampledRead);
-}
+    // Barriers
 
-// --- The photograph ----------------------------------------------------------
+    // Moves mips [base_mip, base_mip + mips) of every layer of `image` between layouts, after `src` work and before `dst` work.
+    void barrier(
+        const vk::raii::CommandBuffer &commands,
+        const GpuImage &image,
+        vk::ImageLayout from,
+        vk::ImageLayout to,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access,
+        std::uint32_t base_mip = 0,
+        std::uint32_t mips = vk::RemainingMipLevels
+    ) {
+        const vk::ImageMemoryBarrier2 image_barrier{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = *image.handle,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = base_mip,
+                .levelCount = mips,
+                .baseArrayLayer = 0,
+                .layerCount = vk::RemainingArrayLayers,
+            },
+        };
 
-// Loads the HDR file and uploads it as 16-bit floats. glm::packHalf4x16 packs
-// four floats into four halves, 8 bytes: one RGBA texel. Halves top out at
-// 65504: fine for the file's relative values (this sky's peak is about 33),
-// though once scaled to nits its brightest texels pass it, and equirectMain
-// clamps them.
-void upload_photograph(
-    Environment &environment,
-    const vk::raii::Device &device,
-    const GpuChoice &gpu,
-    const vk::raii::Queue &queue,
-    const vk::raii::CommandPool &pool,
-    const std::filesystem::path &path
-) {
-    const HdrImage image = load_radiance_hdr(path);
-    const std::size_t texels = static_cast<std::size_t>(image.width) * image.height;
-
-    const Buffer staging = create_buffer(device, gpu, texels * sizeof(std::uint64_t),
-        vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    auto *halves = static_cast<std::uint64_t*>(staging.memory.mapMemory(0, staging.size));
-
-    for (std::size_t i = 0; i < texels; ++i) {
-        const glm::vec4 rgba{image.rgb[i * 3], image.rgb[i * 3 + 1], image.rgb[i * 3 + 2], 1.0f};
-        halves[i] = glm::packHalf4x16(rgba);
+        commands.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &image_barrier});
     }
 
-    staging.memory.unmapMemory();
+    // Makes compute shaders' writes to memory, through pointers, visible to the `dst` work: the CPU once the submission is done, or later shaders.
+    void memory_barrier(const vk::raii::CommandBuffer &commands, vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access) {
+        const vk::MemoryBarrier2 memory{
+            .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+        };
 
-    environment.photograph_width = image.width;
-    environment.photograph_height = image.height;
-    environment.photograph = create_flat(device, gpu, image.width, image.height,
-        vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);
+        commands.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &memory});
+    }
 
-    submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
-        barrier(commands, environment.photograph, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+    // Submitting
+
+    // Records `record` into the environment's command buffer, submits it and waits. The same command buffer is reset and reused every time rather than allocated and freed like submit_and_wait's: these commands bind the descriptor heaps, and the validation layer (1.4.341) wrongly reports conflicting heap ranges after a command buffer that bound them is freed.
+    void run(
+        const Environment &environment,
+        const vk::raii::Device &device,
+        const vk::raii::Queue &queue,
+        const std::function<void(const vk::raii::CommandBuffer&)> &record
+    ) {
+        const vk::raii::CommandBuffer &commands = environment.commands;
+
+        commands.reset();
+        commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        record(commands);
+        commands.end();
+
+        const vk::raii::Fence done(device, vk::FenceCreateInfo{});
+        const vk::CommandBufferSubmitInfo command_info{.commandBuffer = *commands};
+
+        queue.submit2(vk::SubmitInfo2{
+            .commandBufferInfoCount = 1,
+            .pCommandBufferInfos = &command_info,
+        }, *done);
+
+        (void)device.waitForFences(*done, vk::True, std::numeric_limits<std::uint64_t>::max());
+    }
+
+    // Dispatching
+
+    // Runs `pipeline` over a `size` x `size` image with `layers` layers, one thread per texel, in the shaders' 8 x 8 workgroups.
+    void dispatch(
+        const vk::raii::CommandBuffer &commands,
+        const vk::raii::Pipeline &pipeline,
+        const EnvironmentPushData &push,
+        std::uint32_t layers
+    ) {
+        commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
+        commands.pushDataEXT(vk::PushDataInfoEXT{
+            .offset = 0,
+            .data = {.address = &push, .size = sizeof(push)},
+        });
+
+        const std::uint32_t groups = (push.size + 7) / 8;
+        commands.dispatch(groups, groups, layers);
+    }
+
+    // Runs one of atmosphere.slang's steps over `width` x `height` x `depth` threads, in its 8 x 8 workgroups.
+    void dispatch_atmosphere(
+        const vk::raii::CommandBuffer &commands,
+        const vk::raii::Pipeline &pipeline,
+        const AtmospherePushData &push,
+        std::uint32_t width,
+        std::uint32_t height,
+        std::uint32_t depth = 1
+    ) {
+        commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
+        commands.pushDataEXT(vk::PushDataInfoEXT{
+            .offset = 0,
+            .data = {.address = &push, .size = sizeof(push)},
+        });
+        commands.dispatch((width + 7) / 8, (height + 7) / 8, depth);
+    }
+
+    // Fills mips 1 and up of the sky cube from mip 0. Each level is the one above shrunk to half size by a linearly filtered blit, all six faces at once. On entry mip 0 is eTransferSrcOptimal and the rest eUndefined; on return every mip is eShaderReadOnlyOptimal.
+    void generate_sky_mips(const vk::raii::CommandBuffer &commands, const GpuImage &cube) {
+        barrier(commands, cube, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
             vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone,
-            vk::PipelineStageFlagBits2::eCopy, vk::AccessFlagBits2::eTransferWrite);
+            vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite, 1);
 
-        commands.copyBufferToImage(*staging.handle, *environment.photograph.handle, vk::ImageLayout::eTransferDstOptimal,
-            vk::BufferImageCopy{
-                .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
-                .imageExtent = {image.width, image.height, 1},
-            });
+        for (std::uint32_t mip = 1; mip < sky_cube_mips; ++mip) {
+            const auto from = static_cast<std::int32_t>(sky_cube_size >> (mip - 1));
+            const auto to = static_cast<std::int32_t>(sky_cube_size >> mip);
 
-        barrier(commands, environment.photograph, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::PipelineStageFlagBits2::eCopy, vk::AccessFlagBits2::eTransferWrite,
-            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead);
-    });
-}
+            commands.blitImage(*cube.handle, vk::ImageLayout::eTransferSrcOptimal,
+                *cube.handle, vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageBlit{
+                    .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = mip - 1, .baseArrayLayer = 0, .layerCount = 6},
+                    .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{from, from, 1}},
+                    .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = mip, .baseArrayLayer = 0, .layerCount = 6},
+                    .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{to, to, 1}},
+                },
+                vk::Filter::eLinear);
+
+            // This level is the next blit's source.
+            barrier(commands, cube, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
+                vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite,
+                vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferRead, mip, 1);
+        }
+
+        barrier(commands, cube, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eTransferRead,
+            vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eFragmentShader,
+            vk::AccessFlagBits2::eShaderSampledRead);
+    }
+
+    // The photograph
+
+    // Loads the HDR file and uploads it as 16-bit floats. glm::packHalf4x16 packs four floats into four halves, 8 bytes: one RGBA texel. Halves top out at 65504: fine for the file's relative values (this sky's peak is about 33), though once scaled to nits its brightest texels pass it, and equirectMain clamps them.
+    void upload_photograph(
+        Environment &environment,
+        const vk::raii::Device &device,
+        const GpuChoice &gpu,
+        const vk::raii::Queue &queue,
+        const vk::raii::CommandPool &pool,
+        const std::filesystem::path &path
+    ) {
+        const HdrImage image = load_radiance_hdr(path);
+        const std::size_t texels = static_cast<std::size_t>(image.width) * image.height;
+
+        const Buffer staging = create_buffer(device, gpu, texels * sizeof(std::uint64_t),
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+        auto *halves = static_cast<std::uint64_t*>(staging.memory.mapMemory(0, staging.size));
+
+        for (std::size_t i = 0; i < texels; ++i) {
+            const glm::vec4 rgba{image.rgb[i * 3], image.rgb[i * 3 + 1], image.rgb[i * 3 + 2], 1.0f};
+            halves[i] = glm::packHalf4x16(rgba);
+        }
+
+        staging.memory.unmapMemory();
+
+        environment.photograph_width = image.width;
+        environment.photograph_height = image.height;
+        environment.photograph = create_flat(device, gpu, image.width, image.height,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);
+
+        submit_and_wait(device, queue, pool, [&](const vk::raii::CommandBuffer &commands) {
+            barrier(commands, environment.photograph, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+                vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone,
+                vk::PipelineStageFlagBits2::eCopy, vk::AccessFlagBits2::eTransferWrite);
+
+            commands.copyBufferToImage(*staging.handle, *environment.photograph.handle, vk::ImageLayout::eTransferDstOptimal,
+                vk::BufferImageCopy{
+                    .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+                    .imageExtent = {image.width, image.height, 1},
+                });
+
+            barrier(commands, environment.photograph, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                vk::PipelineStageFlagBits2::eCopy, vk::AccessFlagBits2::eTransferWrite,
+                vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead);
+        });
+    }
 
 }  // namespace
 
-// --- Creating ----------------------------------------------------------------
+// Creating
 
 Environment create_environment(
     const vk::raii::Device &device,
@@ -2011,10 +1824,9 @@ Environment create_environment(
     Environment environment;
     environment.clamp_sampler = heaps.clamp_sampler;
 
-    // --- Images --------------------------------------------------------------
+    // Images
 
-    // The sky cube is written by a compute shader (storage), shrunk into its
-    // mips by blits (transfer), and sampled.
+    // The sky cube is written by a compute shader (storage), shrunk into its mips by blits (transfer), and sampled.
     environment.sky_cube = create_cube(device, gpu, sky_cube_size, sky_cube_mips,
         vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled
         | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst);
@@ -2035,10 +1847,9 @@ Environment create_environment(
 
     upload_photograph(environment, device, gpu, queue, pool, photograph);
 
-    // --- Descriptors ---------------------------------------------------------
+    // Descriptors
 
-    // Cubes are sampled as cubes, but written as 2D arrays of six layers,
-    // one mip at a time: a storage descriptor covers one mip level.
+    // Cubes are sampled as cubes, but written as 2D arrays of six layers, one mip at a time: a storage descriptor covers one mip level.
     EnvironmentSlots &slots = environment.slots;
     slots.sky_cube = first_slot;
     slots.sky_target = first_slot + 1;
@@ -2084,10 +1895,9 @@ Environment create_environment(
     describe_table(environment.aerial_inscatter, vk::ImageViewType::e3D, slots.aerial_inscatter, slots.aerial_inscatter_target);
     describe_table(environment.aerial_transmittance, vk::ImageViewType::e3D, slots.aerial_transmittance, slots.aerial_transmittance_target);
 
-    // --- The info buffer and pipelines ---------------------------------------
+    // The info buffer and pipelines
 
-    // Written by compute shaders through its address, read by the CPU and
-    // the scene shader.
+    // Written by compute shaders through its address, read by the CPU and the scene shader.
     environment.info = create_buffer(device, gpu, sizeof(EnvironmentInfo),
         vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -2104,10 +1914,9 @@ Environment create_environment(
     environment.aerial = create_compute_pipeline(device, "atmosphere", "aerialMain");
     environment.sky_cube_atmosphere = create_compute_pipeline(device, "atmosphere", "skyCubeMain");
 
-    // --- The BRDF table and the atmosphere's fixed tables, once ---------------
+    // The BRDF table and the atmosphere's fixed tables, once
 
-    // The pool was created with eResetCommandBuffer, so this one can be
-    // re-recorded for every update.
+    // The pool was created with eResetCommandBuffer, so this one can be re-recorded for every update.
     environment.commands = std::move(vk::raii::CommandBuffers(device, vk::CommandBufferAllocateInfo{
         .commandPool = *pool,
         .level = vk::CommandBufferLevel::ePrimary,
@@ -2127,8 +1936,7 @@ Environment create_environment(
             vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
             vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead);
 
-        // Transmittance, then multiple scattering, which reads it. Both are
-        // read by compute shaders from then on: the sky's tables and cube.
+        // Transmittance, then multiple scattering, which reads it. Both are read by compute shaders from then on: the sky's tables and cube.
         AtmospherePushData atmosphere{
             .transmittance = slots.transmittance,
             .multiscatter = slots.multiscatter,
@@ -2159,7 +1967,7 @@ Environment create_environment(
     return environment;
 }
 
-// --- Updating ----------------------------------------------------------------
+// Updating
 
 void update_environment(
     Environment &environment,
@@ -2173,8 +1981,7 @@ void update_environment(
     // Frames in flight may still be sampling the cubes this rewrites.
     device.waitIdle();
 
-    // A photographed sky has its sun in the picture, so there's no separate
-    // sun light. The atmosphere's compute shader writes this itself.
+    // A photographed sky has its sun in the picture, so there's no separate sun light. The atmosphere's compute shader writes this itself.
     if (source == SkySource::photograph) {
         environment.mapped->sun_illuminance = glm::vec3{0.0f};
     }
@@ -2246,18 +2053,14 @@ void update_environment(
             vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
             vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead);
 
-        // The coefficients and the sun went into the info buffer: make them
-        // visible to the CPU, which reads them once this submission is done,
-        // and to the scene's fragment shaders, which read them every frame.
-        // Waiting for the fence orders the work, but doesn't by itself make
-        // one shader's writes visible to another's reads.
+        // The coefficients and the sun went into the info buffer: make them visible to the CPU, which reads them once this submission is done, and to the scene's fragment shaders, which read them every frame. Waiting for the fence orders the work, but doesn't by itself make one shader's writes visible to another's reads.
         memory_barrier(commands,
             vk::PipelineStageFlagBits2::eHost | vk::PipelineStageFlagBits2::eFragmentShader,
             vk::AccessFlagBits2::eHostRead | vk::AccessFlagBits2::eShaderStorageRead);
     });
 }
 
-// --- The atmosphere, every frame ---------------------------------------------
+// The atmosphere, every frame
 
 void record_atmosphere(
     const vk::raii::CommandBuffer &commands,
@@ -2277,9 +2080,7 @@ void record_atmosphere(
         .sampler = environment.clamp_sampler,
     };
 
-    // Rewritten from scratch every frame. Frames in flight share them, so
-    // this also waits for the previous frame's fragment shaders to finish
-    // reading them.
+    // Rewritten from scratch every frame. Frames in flight share them, so this also waits for the previous frame's fragment shaders to finish reading them.
     for (const GpuImage *table : {&environment.sky_view, &environment.aerial_inscatter, &environment.aerial_transmittance}) {
         barrier(commands, *table, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
             vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead,
@@ -2290,8 +2091,7 @@ void record_atmosphere(
     push.target = slots.sky_view_target;
     dispatch_atmosphere(commands, environment.sky_view_table, push, sky_view_width, sky_view_height);
 
-    // Aerial perspective: one thread per column of the volume, marching
-    // through its slices.
+    // Aerial perspective: one thread per column of the volume, marching through its slices.
     push.target = slots.aerial_inscatter_target;
     push.second_target = slots.aerial_transmittance_target;
     dispatch_atmosphere(commands, environment.aerial, push, aerial_size, aerial_size);
@@ -2304,7 +2104,7 @@ void record_atmosphere(
     }
 }
 
-// --- Reading the irradiance on the CPU ---------------------------------------
+// Reading the irradiance on the CPU
 
 glm::vec3 sky_irradiance(const EnvironmentInfo &info, glm::vec3 n) {
     // The same nine basis functions as environment.slang.
@@ -2348,17 +2148,12 @@ The scene's shaders apply the aerial perspective and the energy compensation; th
 ### Code
 `game-engine/shaders/mesh.slang`:
 ```slang
-// Draws one glTF primitive: its vertices come from the scene's vertex buffer,
-// its place in the world from its DrawData, and its surface from its glTF
-// material, whose textures are read from the descriptor heap. Shaded with
-// glTF's physically based BRDF, lit by the sun and the file's lights, with
-// ray-traced shadows, and by the sky around the scene, already exposed.
-// Three fragment shaders:
+// Draws one glTF primitive: its vertices come from the scene's vertex buffer, its place in the world from its DrawData, and its surface from its glTF material, whose textures are read from the descriptor heap. Shaded with glTF's physically based BRDF, lit by the sun and the file's lights, with ray-traced shadows, and by the sky around the scene, already exposed. Three fragment shaders:
 //   prepassMain      the depth prepass's vertex normal
 //   fragmentMain     opaque and masked surfaces, into the HDR image
 //   transparentMain  blended surfaces, into weighted blended transparency's sums
 
-// --- Data shared with C++ (src/includes/shader_types.h) ----------------------
+// Data shared with C++ (src/includes/shader_types.h)
 
 #include "shared.slangh"
 #include "atmosphere.slangh"
@@ -2367,10 +2162,7 @@ The scene's shaders apply the aerial perspective and the energy compensation; th
 [[vk::push_constant]]
 ConstantBuffer<PushData> push;
 
-// The alpha mode this pipeline was built for (AlphaMode in C++):
-// 0 opaque, 1 mask, 2 blend. A specialization constant: its value is
-// fixed when the pipeline is created, so each pipeline's fragment shader
-// keeps only the code its mode needs.
+// The alpha mode this pipeline was built for (AlphaMode in C++): 0 opaque, 1 mask, 2 blend. A specialization constant: its value is fixed when the pipeline is created, so each pipeline's fragment shader keeps only the code its mode needs.
 [vk::constant_id(0)]
 const uint alpha_mode = 0;
 
@@ -2378,12 +2170,9 @@ static const uint alpha_opaque = 0;
 static const uint alpha_mask = 1;
 static const uint alpha_blend = 2;
 
-// --- Stage interface ---------------------------------------------------------
+// Stage interface
 
-// What the vertex shader hands to the rasterizer. SV_Position is the
-// clip-space position; every other field but draw_index is interpolated
-// across the triangle. Vulkan requires integer fields to be flat, which
-// nointerpolation makes them.
+// What the vertex shader hands to the rasterizer. SV_Position is the clip-space position; every other field but draw_index is interpolated across the triangle. Vulkan requires integer fields to be flat, which nointerpolation makes them.
 struct VertexOutput {
     float4 position : SV_Position;
     float3 relative_position : POSITION;  // camera-relative: the world's axes, the camera at the origin
@@ -2396,14 +2185,9 @@ struct VertexOutput {
     nointerpolation uint draw_index : DRAW_INDEX;  // the same for a whole triangle, so never interpolated
 };
 
-// --- Vertex shader -----------------------------------------------------------
+// Vertex shader
 
-// SV_VulkanVertexID is Vulkan's own gl_VertexIndex, which includes the draw's
-// vertexOffset: each primitive's indices start at 0, and the draw adds where
-// that primitive's vertices begin in the shared buffer. SV_VulkanInstanceID
-// is gl_InstanceIndex, which likewise counts from the command's
-// firstInstance: the cull points that at the command's run of visible draws
-// in `instances`, so each instance finds its draw there.
+// SV_VulkanVertexID is Vulkan's own gl_VertexIndex, which includes the draw's vertexOffset: each primitive's indices start at 0, and the draw adds where that primitive's vertices begin in the shared buffer. SV_VulkanInstanceID is gl_InstanceIndex, which likewise counts from the command's firstInstance: the cull points that at the command's run of visible draws in `instances`, so each instance finds its draw there.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
     FrameData *frame = push.frame;
@@ -2415,10 +2199,7 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_V
     const float3 in_cell = mul(draw.model, float4(vertex.position, 1.0)).xyz;
     const float3 relative_position = camera_relative(frame, draw.cell, in_cell);
 
-    // Tangent and bitangent lie along the surface, so they move with the
-    // model matrix, like positions; only the normal needs the normal matrix.
-    // The bitangent is built before the transform, from glTF's rule
-    // B = cross(N, T) * w: a mirroring transform then mirrors it too.
+    // Tangent and bitangent lie along the surface, so they move with the model matrix, like positions; only the normal needs the normal matrix. The bitangent is built before the transform, from glTF's rule B = cross(N, T) * w: a mirroring transform then mirrors it too.
     const float3 bitangent = cross(vertex.normal, vertex.tangent.xyz) * vertex.tangent.w;
 
     VertexOutput output;
@@ -2434,11 +2215,9 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_V
     return output;
 }
 
-// --- Material textures -------------------------------------------------------
+// Material textures
 
-// Samples a material slot: its texture, with its sampler, at its set of
-// texture coordinates. Descriptor heap access: a handle made from an index
-// reads that descriptor from the bound heap.
+// Samples a material slot: its texture, with its sampler, at its set of texture coordinates. Descriptor heap access: a handle made from an index reads that descriptor from the bound heap.
 float4 sample_slot(TextureSlot slot, VertexOutput input) {
     const Texture2D texture = Texture2D.Handle(uint2(slot.texture, 0));
     const SamplerState sampler = SamplerState.Handle(uint2(slot.sampler, 0));
@@ -2446,19 +2225,16 @@ float4 sample_slot(TextureSlot slot, VertexOutput input) {
     return texture.Sample(sampler, uv);
 }
 
-// --- Normals -----------------------------------------------------------------
+// Normals
 
 // The direction the surface faces at this pixel, for lighting.
-//   1. The interpolated vertex normal. Without normals in the file, glTF asks
-//      for flat shading: the triangle's own normal is the cross product of
-//      how the position changes across neighbouring pixels (ddx, ddy).
+//   1. The interpolated vertex normal. Without normals in the file, glTF asks for flat shading: the triangle's own normal is the cross product of how the position changes across neighbouring pixels (ddx, ddy).
 //   2. A normal map tilts it, per texel, within the surface's tangent frame.
 //   3. On a double-sided material's back face, the surface faces the other way.
 float3 surface_normal(VertexOutput input, Material material, bool front_face, bool apply_normal_map) {
     float3 normal = input.normal;
 
-    // cross(ddy, ddx), not cross(ddx, ddy): Vulkan's screen Y points down,
-    // so this order is the one that points toward the camera.
+    // cross(ddy, ddx), not cross(ddx, ddy): Vulkan's screen Y points down, so this order is the one that points toward the camera.
     if (all(normal == 0.0)) {
         normal = cross(ddy(input.relative_position), ddx(input.relative_position));
     }
@@ -2471,16 +2247,10 @@ float3 surface_normal(VertexOutput input, Material material, bool front_face, bo
     float3 tangent = input.tangent;
     float3 bitangent = input.bitangent;
 
-    // Without tangents in the file, work the frame out from how position and
-    // texture coordinates change between neighbouring pixels (ddx, ddy):
+    // Without tangents in the file, work the frame out from how position and texture coordinates change between neighbouring pixels (ddx, ddy):
     //     dp/dx = P_u * du/dx + P_v * dv/dx
     //     dp/dy = P_u * du/dy + P_v * dv/dy
-    // Solving these for P_u and P_v, how position changes per unit of u and v,
-    // gives the tangent (+u) and bitangent. glTF's v runs down the image while
-    // a normal map's +Y points up, so the bitangent is -P_v. Only the
-    // directions matter, so the determinant's sign stands in for dividing by
-    // it. This can differ slightly from the MikkTSpace tangents glTF
-    // specifies, but needs no precomputation.
+    // Solving these for P_u and P_v, how position changes per unit of u and v, gives the tangent (+u) and bitangent. glTF's v runs down the image while a normal map's +Y points up, so the bitangent is -P_v. Only the directions matter, so the determinant's sign stands in for dividing by it. This can differ slightly from the MikkTSpace tangents glTF specifies, but needs no precomputation.
     if (mapped && all(tangent == 0.0)) {
         const float2 uv = material.normal.uv_set == 0 ? input.uv0 : input.uv1;
         const float3 dp_dx = ddx(input.relative_position);
@@ -2502,32 +2272,25 @@ float3 surface_normal(VertexOutput input, Material material, bool front_face, bo
         bitangent = -bitangent;
     }
 
-    // Texture coordinates that don't change across the triangle give no frame
-    // at all; the plain normal is all we have then.
+    // Texture coordinates that don't change across the triangle give no frame at all; the plain normal is all we have then.
     if (!mapped || all(tangent == 0.0) || all(bitangent == 0.0)) {
         return normal;
     }
 
-    // All three axes must be unit length, or the map's tilt is scaled with
-    // them. The normal already is; the other two grow and shrink with the
-    // model matrix, and interpolation shortens them between vertices.
+    // All three axes must be unit length, or the map's tilt is scaled with them. The normal already is; the other two grow and shrink with the model matrix, and interpolation shortens them between vertices.
     tangent = normalize(tangent);
     bitangent = normalize(bitangent);
 
-    // The map stores each component in 0..1; unpack to -1..1. normal_scale
-    // scales the tilt: X and Y only, as glTF specifies.
+    // The map stores each component in 0..1; unpack to -1..1. normal_scale scales the tilt: X and Y only, as glTF specifies.
     float3 tangent_space = sample_slot(material.normal, input).xyz * 2.0 - 1.0;
     tangent_space.xy *= material.normal_scale;
 
     return normalize(tangent * tangent_space.x + bitangent * tangent_space.y + normal * tangent_space.z);
 }
 
-// --- The glTF BRDF -----------------------------------------------------------
+// The glTF BRDF
 
-// glTF's metallic-roughness model, as its specification's Appendix B writes
-// it. A BRDF says how much of the light arriving from one direction leaves
-// toward another: here from the light (l) toward the viewer (v), around the
-// half vector h between them.
+// glTF's metallic-roughness model, as its specification's Appendix B writes it. A BRDF says how much of the light arriving from one direction leaves toward another: here from the light (l) toward the viewer (v), around the half vector h between them.
 
 static const float pi = 3.14159265;
 
@@ -2541,17 +2304,14 @@ struct Surface {
     float3 energy_compensation;  // what the specular reflection is scaled by (energy_compensation)
 };
 
-// D: the GGX (Trowbridge-Reitz) distribution of microfacet normals. Smooth
-// surfaces have nearly all their tiny facets aligned with the normal, so D
-// is a tall, narrow peak around h = n; rough ones spread it out.
+// D: the GGX (Trowbridge-Reitz) distribution of microfacet normals. Smooth surfaces have nearly all their tiny facets aligned with the normal, so D is a tall, narrow peak around h = n; rough ones spread it out.
 float distribution_ggx(float n_dot_h, float alpha) {
     const float alpha2 = alpha * alpha;
     const float f = n_dot_h * n_dot_h * (alpha2 - 1.0) + 1.0;
     return alpha2 / (pi * f * f);
 }
 
-// V: Smith's height-correlated visibility, the share of facets neither in
-// shadow nor hidden, with the BRDF's 1 / (4 n.l n.v) folded in.
+// V: Smith's height-correlated visibility, the share of facets neither in shadow nor hidden, with the BRDF's 1 / (4 n.l n.v) folded in.
 float visibility_smith(float n_dot_l, float n_dot_v, float alpha) {
     const float alpha2 = alpha * alpha;
     const float from_view = n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - alpha2) + alpha2);
@@ -2560,8 +2320,7 @@ float visibility_smith(float n_dot_l, float n_dot_v, float alpha) {
     return sum > 0.0 ? 0.5 / sum : 0.0;
 }
 
-// The light leaving toward the viewer, in nits, from light arriving from
-// direction `l` with illuminance `illuminance` (lux, on a surface facing it).
+// The light leaving toward the viewer, in nits, from light arriving from direction `l` with illuminance `illuminance` (lux, on a surface facing it).
 float3 shade(Surface surface, float3 l, float3 illuminance) {
     const float n_dot_l = dot(surface.normal, l);
 
@@ -2580,10 +2339,7 @@ float3 shade(Surface surface, float3 l, float3 illuminance) {
     // Schlick's Fresnel: every surface reflects more at grazing angles.
     const float fresnel = pow(1.0 - v_dot_h, 5.0);
 
-    // Metals tint their reflection with the base color and have no diffuse
-    // part. Dielectrics (everything else) reflect 4% head-on, rising to 100%
-    // at grazing angles, and the rest enters the surface and scatters back
-    // out as Lambertian diffuse light, colored by the base color.
+    // Metals tint their reflection with the base color and have no diffuse part. Dielectrics (everything else) reflect 4% head-on, rising to 100% at grazing angles, and the rest enters the surface and scatters back out as Lambertian diffuse light, colored by the base color.
     const float3 compensated = specular * surface.energy_compensation;
     const float3 metal = compensated * (surface.base_color + (1.0 - surface.base_color) * fresnel);
     const float3 dielectric = lerp(surface.base_color / pi, compensated, 0.04 + 0.96 * fresnel);
@@ -2593,19 +2349,12 @@ float3 shade(Surface surface, float3 l, float3 illuminance) {
     return brdf * illuminance * n_dot_l;
 }
 
-// --- Shadows -------------------------------------------------------------------
+// Shadows
 
 // How far a ray toward the sun, or another light infinitely far away, may go.
 static const float infinite_distance = 1e9;
 
-// A ray starting exactly on a surface can hit that same surface: the hit
-// point's rounding puts it a hair below. This moves the origin off the
-// surface along its geometric normal by up to 256 units in the last place
-// (ULPs) of each coordinate: an offset that grows with the coordinates, so
-// it suits any distance from the origin, where a fixed distance would be too
-// much near it and too little far away. The constants are the authors',
-// found by experiment. From "A Fast and Robust Method for Avoiding
-// Self-Intersection" (Wachter and Binder, Ray Tracing Gems, 2019).
+// A ray starting exactly on a surface can hit that same surface: the hit point's rounding puts it a hair below. This moves the origin off the surface along its geometric normal by up to 256 units in the last place (ULPs) of each coordinate: an offset that grows with the coordinates, so it suits any distance from the origin, where a fixed distance would be too much near it and too little far away. The constants are the authors', found by experiment. From "A Fast and Robust Method for Avoiding Self-Intersection" (Wachter and Binder, Ray Tracing Gems, 2019).
 float3 offset_ray_origin(float3 position, float3 normal) {
     const float near_origin = 1.0 / 32.0;
     const float float_scale = 1.0 / 65536.0;
@@ -2617,21 +2366,14 @@ float3 offset_ray_origin(float3 position, float3 normal) {
         const int step = int(int_scale * normal[axis]);
         const float stepped = asfloat(asint(position[axis]) + (position[axis] < 0.0 ? -step : step));
 
-        // Close to 0 a few units in the last place are tiny, so add a small
-        // fixed distance there instead.
+        // Close to 0 a few units in the last place are tiny, so add a small fixed distance there instead.
         offset[axis] = abs(position[axis]) < near_origin ? position[axis] + float_scale * normal[axis] : stepped;
     }
 
     return offset;
 }
 
-// The alpha of a masked or blended triangle a ray met, at the hit point. The
-// hit's barycentric coordinates weight the triangle's three vertices; the
-// texture is read at full resolution, since there are no neighbouring pixels
-// to pick a mip level from. Rays from neighbouring pixels can hit different
-// materials, so the texture's heap index differs between them: that's fine,
-// since descriptor heap access is non-uniform unless the SPIR-V marks it
-// uniform, and Slang doesn't.
+// The alpha of a masked or blended triangle a ray met, at the hit point. The hit's barycentric coordinates weight the triangle's three vertices; the texture is read at full resolution, since there are no neighbouring pixels to pick a mip level from. Rays from neighbouring pixels can hit different materials, so the texture's heap index differs between them: that's fine, since descriptor heap access is non-uniform unless the SPIR-V marks it uniform, and Slang doesn't.
 float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
     const uint first = draw.first_index + triangle * 3;
     const Vertex v0 = frame.vertices[int(frame.indices[first]) + draw.vertex_offset];
@@ -2649,15 +2391,10 @@ float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint t
     return material.base_color_factor.a * vertex_alpha * texture.SampleLevel(sampler, uv, 0.0).a;
 }
 
-// How much of a light gets from `origin` to `distance` along `direction`: 0
-// when something solid is in the way, otherwise the share every see-through
-// layer on the way lets through. A ray query walks the TLAS and BLASes:
+// How much of a light gets from `origin` to `distance` along `direction`: 0 when something solid is in the way, otherwise the share every see-through layer on the way lets through. A ray query walks the TLAS and BLASes:
 //   - an opaque triangle ends it at once: any blocking hit will do,
-//   - a masked one comes back as a candidate, which blocks where its alpha
-//     reaches the cutoff, and lets the light through its cut-out texels,
-//   - a blended one comes back as a candidate that lets 1 - alpha of the
-//     light through, as the transparency pass's reveal sum does. It never
-//     ends the ray: the light goes on, dimmed, to whatever is behind.
+//   - a masked one comes back as a candidate, which blocks where its alpha reaches the cutoff, and lets the light through its cut-out texels,
+//   - a blended one comes back as a candidate that lets 1 - alpha of the light through, as the transparency pass's reveal sum does. It never ends the ray: the light goes on, dimmed, to whatever is behind.
 float light_visibility(FrameData *frame, float3 origin, float3 direction, float distance) {
     const RaytracingAccelerationStructure scene = RaytracingAccelerationStructure(frame.scene_tlas);
 
@@ -2692,20 +2429,14 @@ float light_visibility(FrameData *frame, float3 origin, float3 direction, float 
     return query.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : transmittance;
 }
 
-// Where a ray toward the light `l` starts: off the surface on the light's
-// side, along `face_normal`, the triangle's own flat normal. An interpolated
-// or normal-mapped normal can disagree about which side the light is on.
+// Where a ray toward the light `l` starts: off the surface on the light's side, along `face_normal`, the triangle's own flat normal. An interpolated or normal-mapped normal can disagree about which side the light is on.
 //
-// The TLAS's space is measured from its origin cell, near the camera, not
-// from the camera itself (acceleration.h): tlas_offset, the camera's
-// position in it, moves the camera-relative position there first, so the
-// offset grows with the coordinates the ray is really traced at.
+// The TLAS's space is measured from its origin cell, near the camera, not from the camera itself (acceleration.h): tlas_offset, the camera's position in it, moves the camera-relative position there first, so the offset grows with the coordinates the ray is really traced at.
 float3 shadow_ray_origin(FrameData *frame, float3 position, float3 face_normal, float3 l) {
     return offset_ray_origin(position + frame.tlas_offset, dot(face_normal, l) >= 0.0 ? face_normal : -face_normal);
 }
 
-// shade(), times how much of the light gets through. A ray is only traced
-// when the light could reach the surface at all.
+// shade(), times how much of the light gets through. A ray is only traced when the light could reach the surface at all.
 float3 shade_shadowed(
     Surface surface, FrameData *frame, float3 position, float3 face_normal,
     float3 l, float3 illuminance, float distance
@@ -2718,13 +2449,9 @@ float3 shade_shadowed(
     return reaching > 0.0 ? shade(surface, l, illuminance) * reaching : float3(0.0);
 }
 
-// --- Lights --------------------------------------------------------------------
+// Lights
 
-// The direction toward a light, how far away it is, and the illuminance it
-// gives here, following KHR_lights_punctual. Point and spot lights fade with
-// the square of the distance, then smoothly to nothing at `range`; spot
-// lights also fade from the inner cone to the outer one. A directional
-// light is infinitely far away.
+// The direction toward a light, how far away it is, and the illuminance it gives here, following KHR_lights_punctual. Point and spot lights fade with the square of the distance, then smoothly to nothing at `range`; spot lights also fade from the inner cone to the outer one. A directional light is infinitely far away.
 float3 punctual_light(FrameData *frame, Light light, float3 position, out float3 l, out float distance) {
     if (light.type == light_directional) {
         l = -light.direction;
@@ -2752,12 +2479,11 @@ float3 punctual_light(FrameData *frame, Light light, float3 position, out float3
     return light.intensity * attenuation;
 }
 
-// --- Image-based lighting ------------------------------------------------------
+// Image-based lighting
 
 // Light from the whole sky at once, from what environment.slang prepared.
 
-// The sky's irradiance on a surface facing `n`, in lux: its nine spherical
-// harmonics coefficients, each weighted by its basis function at `n`.
+// The sky's irradiance on a surface facing `n`, in lux: its nine spherical harmonics coefficients, each weighted by its basis function at `n`.
 float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     const float basis[9] = {
         0.282095,
@@ -2779,12 +2505,9 @@ float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     return max(irradiance, 0.0);
 }
 
-// --- Ambient occlusion -------------------------------------------------------------
+// Ambient occlusion
 
-// The rotation that turns `from` into `to`, applied to `v`: Rodrigues'
-// formula rewritten without angles (Moller and Hughes 1999), from the cross
-// and dot products alone. `from` and `to` are never opposite here: the bent
-// normal averages directions in the hemisphere around the normal.
+// The rotation that turns `from` into `to`, applied to `v`: Rodrigues' formula rewritten without angles (Moller and Hughes 1999), from the cross and dot products alone. `from` and `to` are never opposite here: the bent normal averages directions in the hemisphere around the normal.
 float3 rotate_from_to(float3 from, float3 to, float3 v) {
     const float3 axis = cross(from, to);
     const float c = dot(from, to);
@@ -2796,10 +2519,7 @@ float3 rotate_from_to(float3 from, float3 to, float3 v) {
     return v * c + cross(axis, v) + axis * (dot(axis, v) / (1.0 + c));
 }
 
-// Ambient occlusion counts light that's blocked, but light also bounces off
-// the occluders, and more so the brighter they are. Jimenez et al.'s fit,
-// from the same GTAO paper, brightens the visibility by the surface's own
-// albedo, standing in for its surroundings'.
+// Ambient occlusion counts light that's blocked, but light also bounces off the occluders, and more so the brighter they are. Jimenez et al.'s fit, from the same GTAO paper, brightens the visibility by the surface's own albedo, standing in for its surroundings'.
 float3 multi_bounce(float visibility, float3 albedo) {
     const float3 a = 2.0404 * albedo - 0.3324;
     const float3 b = -4.7951 * albedo + 0.6417;
@@ -2807,23 +2527,14 @@ float3 multi_bounce(float visibility, float3 albedo) {
     return max(float3(visibility), ((visibility * a + b) * visibility + c) * visibility);
 }
 
-// How much of the sky's reflection a partly occluded point still sees
-// (Lagarde and de Rousiers 2014): smooth surfaces, looking straight on, keep
-// more of it than occlusion alone suggests; rough ones lose about as much.
-// Its roughness is GGX's alpha, roughness squared.
+// How much of the sky's reflection a partly occluded point still sees (Lagarde and de Rousiers 2014): smooth surfaces, looking straight on, keep more of it than occlusion alone suggests; rough ones lose about as much. Its roughness is GGX's alpha, roughness squared.
 float specular_occlusion(float n_dot_v, float visibility, float alpha) {
     return saturate(pow(n_dot_v + visibility, exp2(-16.0 * alpha - 1.0)) - 1.0 + visibility);
 }
 
 // The sky's light reflected toward the viewer.
-//   - Diffuse: a Lambertian surface reflects base color / pi of the
-//     irradiance falling on it, read along `irradiance_normal` (the bent
-//     normal: the direction the open sky lies in), dimmed by the visibility
-//     and brightened again by multiple bounces.
-//   - Specular, the "split sum": the light (the prefiltered sky along the
-//     reflected ray, at the mip level for this roughness) times how much
-//     the BRDF reflects overall (the table, as a scale and bias on F0),
-//     dimmed by the specular occlusion.
+//   - Diffuse: a Lambertian surface reflects base color / pi of the irradiance falling on it, read along `irradiance_normal` (the bent normal: the direction the open sky lies in), dimmed by the visibility and brightened again by multiple bounces.
+//   - Specular, the "split sum": the light (the prefiltered sky along the reflected ray, at the mip level for this roughness) times how much the BRDF reflects overall (the table, as a scale and bias on F0), dimmed by the specular occlusion.
 //   - A roughness-aware Fresnel term splits the light between the two.
 float3 shade_environment(Surface surface, FrameData *frame, float roughness, float visibility, float3 irradiance_normal) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
@@ -2849,17 +2560,9 @@ float3 shade_environment(Surface surface, FrameData *frame, float roughness, flo
     return diffuse + specular;
 }
 
-// --- Energy compensation -------------------------------------------------------------
+// Energy compensation
 
-// The GGX specular reflection counts light that bounces once off the
-// microfacets; on a rough surface, much of it bounces again, between them,
-// and still leaves. Without it, rough metals come out too dark: a fully
-// rough white metal reflects only about 40% of the light. The BRDF
-// table's two numbers, at f0 = 1, add up to E, the share that one bounce
-// leaves with; scaling the reflection by 1 + f0 (1 / E - 1) puts the rest
-// back, in proportion to how much the surface reflects at all. Kulla and
-// Conty's (2017) idea, in Turquin's (2019) simpler scaled form, which
-// Filament uses.
+// The GGX specular reflection counts light that bounces once off the microfacets; on a rough surface, much of it bounces again, between them, and still leaves. Without it, rough metals come out too dark: a fully rough white metal reflects only about 40% of the light. The BRDF table's two numbers, at f0 = 1, add up to E, the share that one bounce leaves with; scaling the reflection by 1 + f0 (1 / E - 1) puts the rest back, in proportion to how much the surface reflects at all. Kulla and Conty's (2017) idea, in Turquin's (2019) simpler scaled form, which Filament uses.
 float3 energy_compensation(FrameData *frame, float3 base_color, float metallic, float roughness, float n_dot_v) {
     const SamplerState clamped = SamplerState.Handle(uint2(frame.clamp_sampler, 0));
     const Texture2D brdf_lut = Texture2D.Handle(uint2(frame.brdf_lut, 0));
@@ -2868,13 +2571,9 @@ float3 energy_compensation(FrameData *frame, float3 base_color, float metallic, 
     return 1.0 + f0 * (1.0 / max(brdf.x + brdf.y, 1e-3) - 1.0);
 }
 
-// --- Aerial perspective --------------------------------------------------------------
+// Aerial perspective
 
-// The light the air between the camera and `position` (camera-relative)
-// adds, and, in `transmittance`, the share of the surface's light it lets
-// through: the aerial perspective volumes, at the point's place on the
-// screen and its distance. Closer than the first slice's far edge, a share
-// of the first slice's air.
+// The light the air between the camera and `position` (camera-relative) adds, and, in `transmittance`, the share of the surface's light it lets through: the aerial perspective volumes, at the point's place on the screen and its distance. Closer than the first slice's far edge, a share of the first slice's air.
 float3 aerial_perspective(FrameData *frame, float3 position, out float3 transmittance) {
     const float4 clip = mul(frame.view_projection, float4(position, 1.0));
     const float2 screen = clip.xy / clip.w * 0.5 + 0.5;
@@ -2891,12 +2590,9 @@ float3 aerial_perspective(FrameData *frame, float3 position, out float3 transmit
     return inscatter * first_slice_share;
 }
 
-// --- Depth and normal prepass ------------------------------------------------------
+// Depth and normal prepass
 
-// The interpolated vertex normal, facing the viewer on a double-sided
-// material's back face; flat when the file has no normals. This is the
-// surface at the scale the mesh describes it, which ambient occlusion
-// searches against: a normal map's detail isn't in the depth buffer.
+// The interpolated vertex normal, facing the viewer on a double-sided material's back face; flat when the file has no normals. This is the surface at the scale the mesh describes it, which ambient occlusion searches against: a normal map's detail isn't in the depth buffer.
 float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
     float3 normal = input.normal;
 
@@ -2908,10 +2604,7 @@ float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
     return material.double_sided != 0 && !front_face ? -normal : normal;
 }
 
-// The prepass draws every opaque and masked surface first, writing only its
-// depth and its vertex normal, octahedrally encoded. Masked surfaces cut out
-// their transparent texels here too, so the depth buffer holds exactly the
-// surfaces the lighting pass will shade.
+// The prepass draws every opaque and masked surface first, writing only its depth and its vertex normal, octahedrally encoded. Masked surfaces cut out their transparent texels here too, so the depth buffer holds exactly the surfaces the lighting pass will shade.
 [shader("fragment")]
 float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
     FrameData *frame = push.frame;
@@ -2927,18 +2620,14 @@ float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Ta
     return encode_octahedral(vertex_normal(input, material, front_face));
 }
 
-// --- Shading a fragment ------------------------------------------------------
+// Shading a fragment
 
-// The surface at this fragment: its exposed radiance (or one input, in a
-// debug view), and its alpha. The lighting pass writes it as it is; the
-// transparency pass adds it into its sums.
-// `front_face`: whether this triangle faces the camera.
+// The surface at this fragment: its exposed radiance (or one input, in a debug view), and its alpha. The lighting pass writes it as it is; the transparency pass adds it into its sums. `front_face`: whether this triangle faces the camera.
 float4 shade_fragment(VertexOutput input, bool front_face) {
     FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
-    // Base color: factor x texture x vertex color. sRGB textures are decoded
-    // to linear by the sampler, so all three are linear.
+    // Base color: factor x texture x vertex color. sRGB textures are decoded to linear by the sampler, so all three are linear.
     float4 base_color = material.base_color_factor * sample_slot(material.base_color, input) * input.color;
 
     if (alpha_mode == alpha_opaque) {
@@ -2956,20 +2645,14 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
     const float metallic = material.metallic_factor * metallic_roughness.b;
     const float roughness = material.roughness_factor * metallic_roughness.g;
 
-    // Occlusion darkens creases that ambient light can't reach. Strength
-    // blends between no effect (0) and the full map (1).
+    // Occlusion darkens creases that ambient light can't reach. Strength blends between no effect (0) and the full map (1).
     const float occlusion = 1.0 + material.occlusion_strength * (sample_slot(material.occlusion, input).r - 1.0);
 
     const float3 emissive = material.emissive_factor * sample_slot(material.emissive, input).rgb;
 
     const float3 normal = surface_normal(input, material, front_face, frame.view != view_vertex_normal);
 
-    // Ambient occlusion, from the AO pass's image at this pixel. It combines
-    // with the occlusion map by min, not product: both estimate the same
-    // thing, at two scales. The bent normal is a deflection from the vertex
-    // normal; turning the shading normal by the same deflection keeps the
-    // normal map's detail. See-through surfaces aren't in the prepass, so
-    // the image there holds whatever is behind them: they use the map alone.
+    // Ambient occlusion, from the AO pass's image at this pixel. It combines with the occlusion map by min, not product: both estimate the same thing, at two scales. The bent normal is a deflection from the vertex normal; turning the shading normal by the same deflection keeps the normal map's detail. See-through surfaces aren't in the prepass, so the image there holds whatever is behind them: they use the map alone.
     const float4 gtao = Texture2D.Handle(uint2(frame.ambient_occlusion, 0)).Load(int3(int2(input.position.xy), 0));
     float visibility = occlusion;
     float3 irradiance_normal = normal;
@@ -2979,8 +2662,7 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         irradiance_normal = normalize(rotate_from_to(vertex_normal(input, material, front_face), gtao.xyz, normal));
     }
 
-    // The debug views show one input each. Directions are shown as colors:
-    // each component's -1..1 mapped to 0..1.
+    // The debug views show one input each. Directions are shown as colors: each component's -1..1 mapped to 0..1.
     switch (frame.view) {
         case view_base_color: return base_color;
         case view_normal:
@@ -2993,11 +2675,7 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         default: break;
     }
 
-    // The triangle's flat normal, from how the position changes across
-    // neighbouring pixels: exact up to rounding, since a triangle is flat.
-    // Shadow rays start off the surface along it. A triangle seen exactly
-    // edge-on has no area on screen, and no such normal: then the shading
-    // normal stands in, rather than a division by zero.
+    // The triangle's flat normal, from how the position changes across neighbouring pixels: exact up to rounding, since a triangle is flat. Shadow rays start off the surface along it. A triangle seen exactly edge-on has no area on screen, and no such normal: then the shading normal stands in, rather than a division by zero.
     const float3 face_cross = cross(ddy(input.relative_position), ddx(input.relative_position));
     const float3 face_normal = dot(face_cross, face_cross) > 1e-24 ? normalize(face_cross) : normal;
 
@@ -3010,9 +2688,7 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         return float4(sun.xxx, 1.0);
     }
 
-    // A perfectly smooth surface would reflect a punctual light from a single
-    // point, too small for any pixel to catch; a floor on roughness keeps
-    // highlights visible.
+    // A perfectly smooth surface would reflect a punctual light from a single point, too small for any pixel to catch; a floor on roughness keeps highlights visible.
     const float3 view = normalize(-input.relative_position);  // toward the camera, at the origin
     const Surface surface = {
         base_color.rgb,
@@ -3034,14 +2710,10 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         radiance += shade_shadowed(surface, frame, input.relative_position, face_normal, l, illuminance, distance);
     }
 
-    // Indirect light from the sky, darkened by occlusion. Ambient occlusion
-    // only ever reaches this indirect light: the sun and the lights are
-    // direct, and only a shadow can block them.
+    // Indirect light from the sky, darkened by occlusion. Ambient occlusion only ever reaches this indirect light: the sun and the lights are direct, and only a shadow can block them.
     radiance += shade_environment(surface, frame, roughness, visibility, irradiance_normal);
 
-    // The air between the camera and the surface, with the simulated sky:
-    // it dims the surface's light, emission included, and adds its own. The
-    // photograph has no air to go with it.
+    // The air between the camera and the surface, with the simulated sky: it dims the surface's light, emission included, and adds its own. The photograph has no air to go with it.
     float3 transmittance = 1.0;
     float3 inscatter = 0.0;
 
@@ -3049,52 +2721,30 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         inscatter = aerial_perspective(frame, input.relative_position, transmittance);
     }
 
-    // Exposure scales nits into the tone mapper's range here, before the
-    // 16-bit HDR image could overflow. glTF defines emission in nits, but, as
-    // its spec notes many engines do, we take it as already exposed: an
-    // emissive value of 1 shows as near-white, whatever the exposure.
+    // Exposure scales nits into the tone mapper's range here, before the 16-bit HDR image could overflow. glTF defines emission in nits, but, as its spec notes many engines do, we take it as already exposed: an emissive value of 1 shows as near-white, whatever the exposure.
     return float4((radiance * transmittance + inscatter) * frame.exposure + emissive * transmittance, base_color.a);
 }
 
-// --- Fragment shaders ----------------------------------------------------------
+// Fragment shaders
 
-// The lighting pass, for opaque and masked surfaces.
-// SV_Target: the value written to color attachment 0.
-// SV_IsFrontFace: whether this triangle faces the camera.
+// The lighting pass, for opaque and masked surfaces. SV_Target: the value written to color attachment 0. SV_IsFrontFace: whether this triangle faces the camera.
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
     return shade_fragment(input, front_face);
 }
 
-// --- Weighted blended transparency ---------------------------------------------
+// Weighted blended transparency
 
-// The transparency pass, for blended surfaces (McGuire and Bavoil 2013,
-// "Weighted Blended Order-Independent Transparency"). Blending one surface
-// over another depends on which is in front, so blended surfaces would have
-// to be sorted back to front, per pixel. Instead, every fragment adds into
-// two sums, in any order:
-//   accum   (premultiplied color, coverage) times a weight that falls with
-//           distance, added up
-//   reveal  the share of the scene that shows through: 1, times every
-//           fragment's (1 - coverage)
-// The composite (composite.slang) divides accum's color by its coverage,
-// a weighted average of the layers, and lays it over the scene by
-// 1 - reveal. One layer comes out as blending would draw it, to 16-bit
-// precision; where layers overlap, the nearer one counts for more.
+// The transparency pass, for blended surfaces (McGuire and Bavoil 2013, "Weighted Blended Order-Independent Transparency"). Blending one surface over another depends on which is in front, so blended surfaces would have to be sorted back to front, per pixel. Instead, every fragment adds into two sums, in any order:
+//   accum   (premultiplied color, coverage) times a weight that falls with distance, added up
+//   reveal  the share of the scene that shows through: 1, times every fragment's (1 - coverage)
+// The composite (composite.slang) divides accum's color by its coverage, a weighted average of the layers, and lays it over the scene by 1 - reveal. One layer comes out as blending would draw it, to 16-bit precision; where layers overlap, the nearer one counts for more.
 struct TransparentOutput {
     float4 accum : SV_Target0;
     float reveal : SV_Target1;
 };
 
-// The weight: McGuire and Bavoil's equation 7, tuned for 16-bit float sums
-// and distances from 0.1 m to 500 m. Past a few hundred metres it bottoms
-// out at its floor, so distant layers that overlap count equally. It falls
-// steeply with the distance in front of the camera, so where layers overlap,
-// the nearest dominates; the
-// clamp keeps it between 1e-2 and 3e3. Colors are clamped to
-// transparent_max, which tone mapping already shows as nearly white: one
-// fragment then adds at most 4 x 3e3 = 12000, well below the 65504 a
-// 16-bit float holds, so many layers can stack up before the sums overflow.
+// The weight: McGuire and Bavoil's equation 7, tuned for 16-bit float sums and distances from 0.1 m to 500 m. Past a few hundred metres it bottoms out at its floor, so distant layers that overlap count equally. It falls steeply with the distance in front of the camera, so where layers overlap, the nearest dominates; the clamp keeps it between 1e-2 and 3e3. Colors are clamped to transparent_max, which tone mapping already shows as nearly white: one fragment then adds at most 4 x 3e3 = 12000, well below the 65504 a 16-bit float holds, so many layers can stack up before the sums overflow.
 static const float transparent_max = 4.0;
 
 float transparent_weight(float coverage, float view_depth) {
@@ -3108,8 +2758,7 @@ TransparentOutput transparentMain(VertexOutput input, bool front_face : SV_IsFro
     const float4 color = shade_fragment(input, front_face);
     const float coverage = saturate(color.a);
 
-    // The distance in front of the camera, along its view direction: the
-    // clip-space w a perspective projection leaves.
+    // The distance in front of the camera, along its view direction: the clip-space w a perspective projection leaves.
     const float view_depth = mul(push.frame.view_projection, float4(input.relative_position, 1.0)).w;
     const float weight = transparent_weight(coverage, view_depth);
 
@@ -3122,9 +2771,7 @@ TransparentOutput transparentMain(VertexOutput input, bool front_face : SV_IsFro
 
 `game-engine/shaders/background.slang`:
 ```slang
-// Draws the sky behind the scene: one full-screen triangle at depth 0,
-// infinitely far away, depth-tested so it only covers pixels nothing else
-// has drawn on.
+// Draws the sky behind the scene: one full-screen triangle at depth 0, infinitely far away, depth-tested so it only covers pixels nothing else has drawn on.
 
 #include "shared.slangh"
 #include "atmosphere.slangh"
@@ -3133,18 +2780,14 @@ TransparentOutput transparentMain(VertexOutput input, bool front_face : SV_IsFro
 [[vk::push_constant]]
 ConstantBuffer<PushData> push;
 
-// --- Vertex shader -----------------------------------------------------------
+// Vertex shader
 
 struct VertexOutput {
     float4 position : SV_Position;
     float2 clip : TEXCOORD0;  // this point's clip-space x and y
 };
 
-// The full-screen triangle of tonemap.slang, at depth 0: with reverse-Z and
-// no far plane, that's infinitely far, so the depth test lets it through
-// only where the depth buffer still holds its cleared 0. Its clip-space corners are also
-// passed on: interpolated across the triangle, they arrive at each pixel as
-// that pixel's own clip-space position.
+// The full-screen triangle of tonemap.slang, at depth 0: with reverse-Z and no far plane, that's infinitely far, so the depth test lets it through only where the depth buffer still holds its cleared 0. Its clip-space corners are also passed on: interpolated across the triangle, they arrive at each pixel as that pixel's own clip-space position.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     const float2 corner = float2((vertex_id << 1) & 2, vertex_id & 2) * 2.0 - 1.0;
@@ -3155,13 +2798,9 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     return output;
 }
 
-// --- Fragment shader ---------------------------------------------------------
+// Fragment shader
 
-// Each pixel looks along the ray from the camera through it. Turning the
-// pixel's clip-space position at the near plane (depth 1) back into
-// camera-relative space gives a point on that ray; the direction is from the
-// camera, at the origin, to it. The far plane won't do: with none, depth 0
-// is infinitely far, and w there is 0.
+// Each pixel looks along the ray from the camera through it. Turning the pixel's clip-space position at the near plane (depth 1) back into camera-relative space gives a point on that ray; the direction is from the camera, at the origin, to it. The far plane won't do: with none, depth 0 is infinitely far, and w there is 0.
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target {
     FrameData *frame = push.frame;
@@ -3169,8 +2808,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
     const float4 near_point = mul(frame.inverse_view_projection, float4(input.clip, 1.0, 1.0));
     const float3 direction = normalize(near_point.xyz / near_point.w);
 
-    // The simulated sky from its sky-view table, which holds more detail
-    // near the horizon than the cube; the photograph from the cube.
+    // The simulated sky from its sky-view table, which holds more detail near the horizon than the cube; the photograph from the cube.
     const SamplerState clamped = SamplerState.Handle(uint2(frame.clamp_sampler, 0));
     float3 radiance;
 
@@ -3183,15 +2821,13 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
         radiance = sky.SampleLevel(clamped, direction, 0.0).rgb;
     }
 
-    // The sun's disk, which neither the table nor the cube holds: its illuminance spread
-    // over the tiny solid angle it covers, pi r^2 for an angular radius r.
+    // The sun's disk, which neither the table nor the cube holds: its illuminance spread over the tiny solid angle it covers, pi r^2 for an angular radius r.
     if (dot(direction, frame.sun_direction) > cos(frame.sun_angular_radius)) {
         const float solid_angle = 3.14159265 * frame.sun_angular_radius * frame.sun_angular_radius;
         radiance += frame.sun_illuminance / solid_angle;
     }
 
-    // Exposed like the scene, and kept below the 16-bit float limit: the
-    // sun's disk is over a billion nits.
+    // Exposed like the scene, and kept below the 16-bit float limit: the sun's disk is over a billion nits.
     return float4(min(radiance * frame.exposure, 60000.0), 1.0);
 }
 ```
@@ -3223,8 +2859,7 @@ Something to see the air over, out to where the aerial perspective ends, 32 km a
 #include <string>
 #include <vector>
 
-// One glTF primitive: a run of indices in the scene's index buffer, drawn
-// against the vertices starting at `vertex_offset` in the vertex buffer.
+// One glTF primitive: a run of indices in the scene's index buffer, drawn against the vertices starting at `vertex_offset` in the vertex buffer.
 struct Primitive {
     std::uint32_t first_index = 0;
     std::uint32_t index_count = 0;
@@ -3232,9 +2867,7 @@ struct Primitive {
     std::uint32_t material = 0;  // index into Scene::materials
 };
 
-// glTF's texture filters and wrap modes, as the file stores them: OpenGL
-// enum values (9728 GL_NEAREST, 10497 GL_REPEAT, ...). A filter of -1 means
-// the file leaves it to the renderer.
+// glTF's texture filters and wrap modes, as the file stores them: OpenGL enum values (9728 GL_NEAREST, 10497 GL_REPEAT, ...). A filter of -1 means the file leaves it to the renderer.
 struct SceneSampler {
     int mag_filter = -1;
     int min_filter = -1;
@@ -3249,8 +2882,7 @@ struct TextureRef {
     std::uint32_t uv_set = 0;   // which texture coordinates: 0 or 1
 };
 
-// A glTF metallic-roughness material. The defaults are glTF's: a material
-// that sets nothing is white, fully metallic and fully rough.
+// A glTF metallic-roughness material. The defaults are glTF's: a material that sets nothing is white, fully metallic and fully rough.
 struct SceneMaterial {
     glm::vec4 base_color_factor{1.0f};
     TextureRef base_color;
@@ -3275,37 +2907,28 @@ struct SceneImage {
     bool srgb = false;  // holds colors (base color, emissive) rather than data like normals
 };
 
-// One thing to draw: a primitive, placed in the world by a node's transform.
-// A mesh used by several nodes is drawn once per node. The draw is placed in
-// a world cell (cells.h): `model` moves the primitive into it, measured from
-// the cell's corner, and the box is measured from there too.
+// One thing to draw: a primitive, placed in the world by a node's transform. A mesh used by several nodes is drawn once per node. The draw is placed in a world cell (cells.h): `model` moves the primitive into it, measured from the cell's corner, and the box is measured from there too.
 struct MeshDraw {
     glm::mat4 model{1.0f};
     glm::ivec3 cell{0};
     std::uint32_t primitive = 0;
 
-    // A transform that mirrors the primitive (a negative scale) reverses the
-    // order its triangles' corners appear in, which decides which side is
-    // the front.
+    // A transform that mirrors the primitive (a negative scale) reverses the order its triangles' corners appear in, which decides which side is the front.
     bool mirrored = false;
 
-    // The draw's box, in its cell: the primitive's box, moved by `model`, and
-    // boxed again. It holds every triangle of the draw, if a little loosely
-    // when the transform rotates.
+    // The draw's box, in its cell: the primitive's box, moved by `model`, and boxed again. It holds every triangle of the draw, if a little loosely when the transform rotates.
     glm::vec3 bounds_min{0.0f};
     glm::vec3 bounds_max{0.0f};
 };
 
-// Everything from a glTF file that drawing its geometry needs, flattened into
-// arrays ready to upload: every primitive's vertices and indices back to back.
+// Everything from a glTF file that drawing its geometry needs, flattened into arrays ready to upload: every primitive's vertices and indices back to back.
 struct Scene {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
     std::vector<Primitive> primitives;
     std::vector<MeshDraw> draws;
 
-    // The file's materials, plus a plain white one at the end for primitives
-    // that don't name a material.
+    // The file's materials, plus a plain white one at the end for primitives that don't name a material.
     std::vector<SceneMaterial> materials;
     std::vector<SceneImage> images;
     std::vector<SceneSampler> samplers;
@@ -3313,22 +2936,15 @@ struct Scene {
     // KHR_lights_punctual lights, placed in the world by their nodes.
     std::vector<Light> lights;
 
-    // World-space box around everything drawn, roughly, in floats. Nothing
-    // uses it yet: it's there for a camera that frames the scene.
+    // World-space box around everything drawn, roughly, in floats. Nothing uses it yet: it's there for a camera that frames the scene.
     glm::vec3 bounds_min{std::numeric_limits<float>::max()};
     glm::vec3 bounds_max{std::numeric_limits<float>::lowest()};
 };
 
-// Loads the default scene of a .gltf or .glb file, with its materials,
-// samplers, lights and images, still encoded.
-// The scene is placed with its origin at `origin`, in metres from the
-// world's.
+// Loads the default scene of a .gltf or .glb file, with its materials, samplers, lights and images, still encoded. The scene is placed with its origin at `origin`, in metres from the world's.
 Scene load_gltf(const std::filesystem::path &path, const glm::dvec3 &origin = glm::dvec3{0.0});
 
-// Adds a flat, plain ground to `scene`: a square `size` metres across,
-// centred under `centre` at height `height`, made of `tile`-metre tiles. The
-// tiles are one primitive drawn once per tile, each placed in its own cell,
-// so the ground holds a float's precision wherever the camera is on it.
+// Adds a flat, plain ground to `scene`: a square `size` metres across, centred under `centre` at height `height`, made of `tile`-metre tiles. The tiles are one primitive drawn once per tile, each placed in its own cell, so the ground holds a float's precision wherever the camera is on it.
 void add_ground(Scene &scene, const glm::dvec3 &centre, double height, double size, double tile);
 ```
 
@@ -3337,8 +2953,7 @@ In `game-engine/src/scene.cpp`, add `#include <array>` after `#include <algorith
 In `game-engine/src/scene.cpp`, add this section before `Scene load_gltf(`:
 ```cpp
 void add_ground(Scene &scene, const glm::dvec3 &centre, double height, double size, double tile) {
-    // One tile: a square from its corner, facing up. Both triangles wind
-    // counter-clockwise seen from above, glTF's front.
+    // One tile: a square from its corner, facing up. Both triangles wind counter-clockwise seen from above, glTF's front.
     const auto edge = static_cast<float>(tile);
     const std::array<glm::vec3, 4> corners{
         glm::vec3{0.0f, 0.0f, 0.0f},
@@ -3448,431 +3063,433 @@ void add_ground(Scene &scene, const glm::dvec3 &centre, double height, double si
 
 namespace {
 
-// --- Frames in flight --------------------------------------------------------
+    // Frames in flight
 
-// How many frames the CPU may record ahead of the GPU.
-constexpr std::size_t frames_in_flight = 2;
+    // How many frames the CPU may record ahead of the GPU.
+    constexpr std::size_t frames_in_flight = 2;
 
-constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
+    constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
 
-// How far, in cells each way, the camera may stray from the TLAS's origin
-// cell before the TLAS is rebuilt around it: 16 cells of 64 m, about 1 km.
-// Within that, a ray near the camera is traced at coordinates under about
-// 1.1 km, where floats are 0.06 to 0.12 mm apart.
-constexpr int tlas_reach_cells = 16;
+    // How far, in cells each way, the camera may stray from the TLAS's origin cell before the TLAS is rebuilt around it: 16 cells of 64 m, about 1 km. Within that, a ray near the camera is traced at coordinates under about 1.1 km, where floats are 0.06 to 0.12 mm apart.
+    constexpr int tlas_reach_cells = 16;
 
-// What each in-flight frame needs for itself. `data` holds this frame's
-// FrameData; the GPU may still be reading the other frame's while the CPU
-// writes this one.
-struct Frame {
-    vk::raii::CommandBuffer commands = nullptr;
-    vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
-    vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
-    Buffer data;                                   // one FrameData, host-visible
-    FrameData *mapped = nullptr;                   // `data`, mapped for the CPU to write
-    Buffer cull_totals;                            // the cull's totals, copied out, host-visible
-    const CullTotals *totals = nullptr;            // `cull_totals`, mapped for the CPU to read
-};
-
-// --- Recording a frame -------------------------------------------------------
-
-// Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
-// `aspect` is which part of the image: its color, or its depth.
-void transition(
-    const vk::raii::CommandBuffer &commands,
-    vk::Image image,
-    vk::ImageLayout from,
-    vk::ImageLayout to,
-    vk::PipelineStageFlags2 src_stage,
-    vk::AccessFlags2 src_access,
-    vk::PipelineStageFlags2 dst_stage,
-    vk::AccessFlags2 dst_access,
-    vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor
-) {
-    const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-        .oldLayout = from,
-        .newLayout = to,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = image,
-        .subresourceRange = {
-            .aspectMask = aspect,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+    // What each in-flight frame needs for itself. `data` holds this frame's FrameData; the GPU may still be reading the other frame's while the CPU writes this one.
+    struct Frame {
+        vk::raii::CommandBuffer commands = nullptr;
+        vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
+        vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
+        Buffer data;                                   // one FrameData, host-visible
+        FrameData *mapped = nullptr;                   // `data`, mapped for the CPU to write
+        Buffer cull_totals;                            // the cull's totals, copied out, host-visible
+        const CullTotals *totals = nullptr;            // `cull_totals`, mapped for the CPU to read
     };
 
-    commands.pipelineBarrier2(vk::DependencyInfo{
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier,
-    });
-}
+    // Recording a frame
 
-// The alpha modes the prepass and the lighting pass draw, in the order of
-// their pipelines. The see-through mode, AlphaMode::blend, has only the
-// transparency pass's.
-constexpr std::array solid_modes{AlphaMode::opaque, AlphaMode::mask};
-
-// glTF's front faces wind counter-clockwise, seen from the front. Our
-// projection's Y flip (see camera.cpp) only undoes the difference between
-// OpenGL's upward Y and Vulkan's downward one, so on screen they still wind
-// counter-clockwise. A mirroring transform reverses that.
-constexpr vk::FrontFace front_face = vk::FrontFace::eCounterClockwise;
-constexpr vk::FrontFace mirrored_front_face = vk::FrontFace::eClockwise;
-
-// Resource heap slots of the swapchain's images, written by describe_screen()
-// in main and rewritten whenever the swapchain is rebuilt.
-struct ScreenSlots {
-    std::uint32_t hdr = 0;             // sampled, by tone mapping
-    std::uint32_t depth = 0;           // sampled, by ambient occlusion
-    std::uint32_t normals = 0;         // sampled, by ambient occlusion
-    std::uint32_t ao = 0;              // sampled, by the lighting pass
-    AoTargets ao_targets;              // storage, for the AO pass
-    std::uint32_t accum = 0;           // sampled, by the transparency composite
-    std::uint32_t reveal = 0;          // sampled, by the transparency composite
-};
-
-constexpr std::uint32_t screen_slot_count = 11;
-
-// Every graphics pipeline a frame uses. The prepass and the lighting pass
-// have one per solid alpha mode, in solid_modes' order; see-through surfaces
-// have only the transparency pass's.
-struct ScenePipelines {
-    std::vector<vk::raii::Pipeline> prepass;
-    std::vector<vk::raii::Pipeline> lighting;
-    vk::raii::Pipeline transparency = nullptr;
-    vk::raii::Pipeline background = nullptr;
-    vk::raii::Pipeline composite = nullptr;
-    vk::raii::Pipeline tonemap = nullptr;
-};
-
-// What a frame draws and where it finishes: the scene's index buffer, the
-// frame's data, the screen images' slots, and where the cull's totals go.
-struct DrawList {
-    vk::Buffer index_buffer;
-    vk::DeviceAddress frame = 0;   // this frame's FrameData
-    ScreenSlots screen;
-    View view = View::lit;
-    vk::Buffer readback;           // this frame's copy of the cull's totals
-    bool see_through = false;      // whether the scene has blended draws at all
-    glm::vec3 sun_direction{0.0f}; // toward the sun
-    float altitude = 0.0f;         // the camera's height above the ground, in metres
-};
-
-// Draws every list of alpha mode `mode` with `pipeline`: one indirect call
-// per list, after setting the list's cull mode and front face. Push data
-// says where the frame's data is; each instance finds its DrawData through
-// the cull's instances.
-void draw_mode(
-    const vk::raii::CommandBuffer &commands,
-    const DrawCulling &culling,
-    const DrawList &draws,
-    AlphaMode mode,
-    const vk::raii::Pipeline &pipeline
-) {
-    commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-
-    const PushData push{.frame = draws.frame};
-
-    commands.pushDataEXT(vk::PushDataInfoEXT{
-        .offset = 0,
-        .data = {.address = &push, .size = sizeof(push)},
-    });
-
-    for (const bool double_sided : {false, true}) {
-        for (const bool mirrored : {false, true}) {
-            const std::uint32_t list = draw_list_index(mode, double_sided, mirrored);
-
-            if (culling.list_ranges[list].group_count == 0) {
-                continue;
-            }
-
-            // Single-sided surfaces are invisible from behind, so the GPU can
-            // skip their back faces before running the fragment shader.
-            commands.setCullMode(double_sided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
-            commands.setFrontFace(mirrored ? mirrored_front_face : front_face);
-            draw_list(commands, culling, list);
-        }
-    }
-}
-
-// The viewport and scissor every pass uses: the whole image. The pipelines
-// leave both dynamic.
-void set_viewport(const vk::raii::CommandBuffer &commands, vk::Extent2D extent) {
-    commands.setViewport(0, vk::Viewport{
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = static_cast<float>(extent.width),
-        .height = static_cast<float>(extent.height),
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    });
-    commands.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = extent});
-}
-
-// Records a frame: the cull, then five passes:
-//   1. the depth prepass: every solid surface's depth and vertex normal,
-//   2. ambient occlusion, from those, in compute shaders,
-//   3. the lighting, into the HDR image: each solid alpha mode's lists with
-//      that mode's pipeline, against the prepass's depth, then the sky
-//      behind them,
-//   4. transparency, if anything is see-through: the blended lists into two
-//      sums, in any order, then those laid over the HDR image,
-//   5. tone mapping, from the HDR image into the swapchain image, which is
-//      then ready to present.
-void record_frame(
-    const vk::raii::CommandBuffer &commands,
-    const Swapchain &swapchain,
-    std::uint32_t image_index,
-    const ScenePipelines &pipelines,
-    const AmbientOcclusion &ambient_occlusion,
-    const DrawCulling &culling,
-    const Environment &environment,
-    const DescriptorHeaps &heaps,
-    const DrawList &draws
-) {
-    const vk::Image image = swapchain.images[image_index];
-    const vk::Image hdr = *swapchain.hdr.handle;
-    const vk::Image depth = *swapchain.depth.handle;
-    const vk::Image normals = *swapchain.normals.handle;
-
-    commands.reset();
-    commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-
-    // Every texture and sampler the shaders read comes from these two heaps.
-    // They stay bound for every pass, graphics and compute.
-    bind_descriptor_heaps(commands, heaps);
-
-    // One index buffer for the whole scene. Indices go through the GPU's
-    // fixed-function index fetch, which also lets it reuse vertices shared
-    // between neighbouring triangles.
-    commands.bindIndexBuffer(draws.index_buffer, 0, vk::IndexType::eUint32);
-
-    // --- The cull --------------------------------------------------------------
-
-    // Every pass below draws only what the cull keeps, from its lists.
-    record_culling(commands, culling, draws.frame, draws.readback);
-
-    // --- The atmosphere ------------------------------------------------------
-
-    // The sky around the camera and the air in front of it, for this frame's
-    // sun, height and view: the background and the lighting read them.
-    record_atmosphere(commands, environment, draws.frame, draws.sun_direction, draws.altitude);
-
-    // --- Pass 1: the depth prepass -------------------------------------------
-
-    // The depth buffer and the normals are shared by the frames in flight, so
-    // these also wait for the previous frame to finish reading them: the AO
-    // pass reads both, and the lighting pass depth-tests against the depth.
-    transition(commands, depth,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::ImageAspectFlagBits::eDepth
-    );
-
-    transition(commands, normals,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-    );
-
-    // Reverse-Z: 0 is infinitely far. The depth is stored this time: the AO
-    // pass and the lighting pass both read it.
-    const vk::RenderingAttachmentInfo normal_attachment{
-        .imageView = *swapchain.normals.view,
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{0.0f, 0.0f, 0.0f, 0.0f}}},
-    };
-
-    const vk::RenderingAttachmentInfo prepass_depth{
-        .imageView = *swapchain.depth.view,
-        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = 0.0f}},
-    };
-
-    const vk::Rect2D whole_image{.offset = {0, 0}, .extent = swapchain.extent};
-
-    commands.beginRendering(vk::RenderingInfo{
-        .renderArea = whole_image,
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &normal_attachment,
-        .pDepthAttachment = &prepass_depth,
-    });
-
-    set_viewport(commands, swapchain.extent);
-
-    // Solid surfaces only: opaque, then masked.
-    for (std::size_t i = 0; i < solid_modes.size(); ++i) {
-        draw_mode(commands, culling, draws, solid_modes[i], pipelines.prepass[i]);
-    }
-
-    commands.endRendering();
-
-    // --- Pass 2: ambient occlusion -------------------------------------------
-
-    // From here on the depth is only read: by the AO pass, and as the
-    // lighting pass's depth test, which eDepthReadOnlyOptimal allows at once.
-    transition(commands, depth,
-        vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eDepthReadOnlyOptimal,
-        vk::PipelineStageFlagBits2::eLateFragmentTests, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests
-            | vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-        vk::ImageAspectFlagBits::eDepth
-    );
-
-    transition(commands, normals,
-        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead
-    );
-
-    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_targets,
-        AoPushData{.frame = draws.frame, .depth = draws.screen.depth, .normals = draws.screen.normals});
-
-    // --- Pass 3: the lighting --------------------------------------------------
-
-    // The HDR image is shared by the frames in flight too: this waits for
-    // the previous frame's tone mapping to finish reading it.
-    transition(commands, hdr,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-    );
-
-    // Every pixel is drawn over, by the scene or the sky; clearing is just
-    // cheaper than loading what was there.
-    const vk::RenderingAttachmentInfo hdr_attachment{
-        .imageView = *swapchain.hdr.view,
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}},
-    };
-
-    // The prepass's depth, loaded and tested against but not written.
-    const vk::RenderingAttachmentInfo lighting_depth{
-        .imageView = *swapchain.depth.view,
-        .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
-        .loadOp = vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eNone,
-    };
-
-    commands.beginRendering(vk::RenderingInfo{
-        .renderArea = whole_image,
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &hdr_attachment,
-        .pDepthAttachment = &lighting_depth,
-    });
-
-    set_viewport(commands, swapchain.extent);
-
-    for (std::size_t i = 0; i < solid_modes.size(); ++i) {
-        draw_mode(commands, culling, draws, solid_modes[i], pipelines.lighting[i]);
-    }
-
-    // The sky goes in once everything solid is drawn: it only covers pixels
-    // still at depth 0, infinitely far.
-    commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.background);
-
-    const PushData sky_push{.frame = draws.frame};
-    commands.pushDataEXT(vk::PushDataInfoEXT{
-        .offset = 0,
-        .data = {.address = &sky_push, .size = sizeof(sky_push)},
-    });
-
-    commands.draw(3, 1, 0, 0);
-    commands.endRendering();
-
-    // --- Pass 4: transparency ------------------------------------------------
-
-    if (draws.see_through) {
-        const vk::Image accum = *swapchain.accum.handle;
-        const vk::Image reveal = *swapchain.reveal.handle;
-
-        // Both sums are shared by the frames in flight: this waits for the
-        // previous frame's composite to finish reading them.
-        for (const vk::Image sum : {accum, reveal}) {
-            transition(commands, sum,
-                vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-                vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite
-            );
-        }
-
-        // Before any layer: nothing summed, and the whole scene showing through.
-        const std::array sum_attachments{
-            vk::RenderingAttachmentInfo{
-                .imageView = *swapchain.accum.view,
-                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{0.0f, 0.0f, 0.0f, 0.0f}}},
-            },
-            vk::RenderingAttachmentInfo{
-                .imageView = *swapchain.reveal.view,
-                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{1.0f, 0.0f, 0.0f, 0.0f}}},
+    // Moves `image` between layouts, and makes the `dst` work wait for the `src` work. `aspect` is which part of the image: its color, or its depth.
+    void transition(
+        const vk::raii::CommandBuffer &commands,
+        vk::Image image,
+        vk::ImageLayout from,
+        vk::ImageLayout to,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access,
+        vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor
+    ) {
+        const vk::ImageMemoryBarrier2 barrier{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = image,
+            .subresourceRange = {
+                .aspectMask = aspect,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
             },
         };
 
-        // The same depth as the lighting pass: tested, not written, so a
-        // see-through surface behind a solid one is hidden, and one behind
-        // another see-through one still counts.
+        commands.pipelineBarrier2(vk::DependencyInfo{
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &barrier,
+        });
+    }
+
+    // The alpha modes the prepass and the lighting pass draw, in the order of their pipelines. The see-through mode, AlphaMode::blend, has only the transparency pass's.
+    constexpr std::array solid_modes{AlphaMode::opaque, AlphaMode::mask};
+
+    // glTF's front faces wind counter-clockwise, seen from the front. Our projection's Y flip (see camera.cpp) only undoes the difference between OpenGL's upward Y and Vulkan's downward one, so on screen they still wind counter-clockwise. A mirroring transform reverses that.
+    constexpr vk::FrontFace front_face = vk::FrontFace::eCounterClockwise;
+    constexpr vk::FrontFace mirrored_front_face = vk::FrontFace::eClockwise;
+
+    // Resource heap slots of the swapchain's images, written by describe_screen() in main and rewritten whenever the swapchain is rebuilt.
+    struct ScreenSlots {
+        std::uint32_t hdr = 0;             // sampled, by tone mapping
+        std::uint32_t depth = 0;           // sampled, by ambient occlusion
+        std::uint32_t normals = 0;         // sampled, by ambient occlusion
+        std::uint32_t ao = 0;              // sampled, by the lighting pass
+        AoTargets ao_targets;              // storage, for the AO pass
+        std::uint32_t accum = 0;           // sampled, by the transparency composite
+        std::uint32_t reveal = 0;          // sampled, by the transparency composite
+    };
+
+    constexpr std::uint32_t screen_slot_count = 11;
+
+    // Every graphics pipeline a frame uses. The prepass and the lighting pass have one per solid alpha mode, in solid_modes' order; see-through surfaces have only the transparency pass's.
+    struct ScenePipelines {
+        std::vector<vk::raii::Pipeline> prepass;
+        std::vector<vk::raii::Pipeline> lighting;
+        vk::raii::Pipeline transparency = nullptr;
+        vk::raii::Pipeline background = nullptr;
+        vk::raii::Pipeline composite = nullptr;
+        vk::raii::Pipeline tonemap = nullptr;
+    };
+
+    // What a frame draws and where it finishes: the scene's index buffer, the frame's data, the screen images' slots, and where the cull's totals go.
+    struct DrawList {
+        vk::Buffer index_buffer;
+        vk::DeviceAddress frame = 0;   // this frame's FrameData
+        ScreenSlots screen;
+        View view = View::lit;
+        vk::Buffer readback;           // this frame's copy of the cull's totals
+        bool see_through = false;      // whether the scene has blended draws at all
+        glm::vec3 sun_direction{0.0f}; // toward the sun
+        float altitude = 0.0f;         // the camera's height above the ground, in metres
+    };
+
+    // Draws every list of alpha mode `mode` with `pipeline`: one indirect call per list, after setting the list's cull mode and front face. Push data says where the frame's data is; each instance finds its DrawData through the cull's instances.
+    void draw_mode(
+        const vk::raii::CommandBuffer &commands,
+        const DrawCulling &culling,
+        const DrawList &draws,
+        AlphaMode mode,
+        const vk::raii::Pipeline &pipeline
+    ) {
+        commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+
+        const PushData push{.frame = draws.frame};
+
+        commands.pushDataEXT(vk::PushDataInfoEXT{
+            .offset = 0,
+            .data = {.address = &push, .size = sizeof(push)},
+        });
+
+        for (const bool double_sided : {false, true}) {
+            for (const bool mirrored : {false, true}) {
+                const std::uint32_t list = draw_list_index(mode, double_sided, mirrored);
+
+                if (culling.list_ranges[list].group_count == 0) {
+                    continue;
+                }
+
+                // Single-sided surfaces are invisible from behind, so the GPU can skip their back faces before running the fragment shader.
+                commands.setCullMode(double_sided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
+                commands.setFrontFace(mirrored ? mirrored_front_face : front_face);
+                draw_list(commands, culling, list);
+            }
+        }
+    }
+
+    // The viewport and scissor every pass uses: the whole image. The pipelines leave both dynamic.
+    void set_viewport(const vk::raii::CommandBuffer &commands, vk::Extent2D extent) {
+        commands.setViewport(0, vk::Viewport{
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = static_cast<float>(extent.width),
+            .height = static_cast<float>(extent.height),
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f,
+        });
+        commands.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = extent});
+    }
+
+    // Records a frame: the cull, then five passes:
+    //   1. the depth prepass: every solid surface's depth and vertex normal,
+    //   2. ambient occlusion, from those, in compute shaders,
+    //   3. the lighting, into the HDR image: each solid alpha mode's lists with that mode's pipeline, against the prepass's depth, then the sky behind them,
+    //   4. transparency, if anything is see-through: the blended lists into two sums, in any order, then those laid over the HDR image,
+    //   5. tone mapping, from the HDR image into the swapchain image, which is then ready to present.
+    void record_frame(
+        const vk::raii::CommandBuffer &commands,
+        const Swapchain &swapchain,
+        std::uint32_t image_index,
+        const ScenePipelines &pipelines,
+        const AmbientOcclusion &ambient_occlusion,
+        const DrawCulling &culling,
+        const Environment &environment,
+        const DescriptorHeaps &heaps,
+        const DrawList &draws
+    ) {
+        const vk::Image image = swapchain.images[image_index];
+        const vk::Image hdr = *swapchain.hdr.handle;
+        const vk::Image depth = *swapchain.depth.handle;
+        const vk::Image normals = *swapchain.normals.handle;
+
+        commands.reset();
+        commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
+        // Every texture and sampler the shaders read comes from these two heaps. They stay bound for every pass, graphics and compute.
+        bind_descriptor_heaps(commands, heaps);
+
+        // One index buffer for the whole scene. Indices go through the GPU's fixed-function index fetch, which also lets it reuse vertices shared between neighbouring triangles.
+        commands.bindIndexBuffer(draws.index_buffer, 0, vk::IndexType::eUint32);
+
+        // The cull
+
+        // Every pass below draws only what the cull keeps, from its lists.
+        record_culling(commands, culling, draws.frame, draws.readback);
+
+        // The atmosphere
+
+        // The sky around the camera and the air in front of it, for this frame's sun, height and view: the background and the lighting read them.
+        record_atmosphere(commands, environment, draws.frame, draws.sun_direction, draws.altitude);
+
+        // Pass 1: the depth prepass
+
+        // The depth buffer and the normals are shared by the frames in flight, so these also wait for the previous frame to finish reading them: the AO pass reads both, and the lighting pass depth-tests against the depth.
+        transition(commands, depth,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::ImageAspectFlagBits::eDepth
+        );
+
+        transition(commands, normals,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
+        );
+
+        // Reverse-Z: 0 is infinitely far. The depth is stored this time: the AO pass and the lighting pass both read it.
+        const vk::RenderingAttachmentInfo normal_attachment{
+            .imageView = *swapchain.normals.view,
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{0.0f, 0.0f, 0.0f, 0.0f}}},
+        };
+
+        const vk::RenderingAttachmentInfo prepass_depth{
+            .imageView = *swapchain.depth.view,
+            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = 0.0f}},
+        };
+
+        const vk::Rect2D whole_image{.offset = {0, 0}, .extent = swapchain.extent};
+
         commands.beginRendering(vk::RenderingInfo{
             .renderArea = whole_image,
             .layerCount = 1,
-            .colorAttachmentCount = static_cast<std::uint32_t>(sum_attachments.size()),
-            .pColorAttachments = sum_attachments.data(),
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &normal_attachment,
+            .pDepthAttachment = &prepass_depth,
+        });
+
+        set_viewport(commands, swapchain.extent);
+
+        // Solid surfaces only: opaque, then masked.
+        for (std::size_t i = 0; i < solid_modes.size(); ++i) {
+            draw_mode(commands, culling, draws, solid_modes[i], pipelines.prepass[i]);
+        }
+
+        commands.endRendering();
+
+        // Pass 2: ambient occlusion
+
+        // From here on the depth is only read: by the AO pass, and as the lighting pass's depth test, which eDepthReadOnlyOptimal allows at once.
+        transition(commands, depth,
+            vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eDepthReadOnlyOptimal,
+            vk::PipelineStageFlagBits2::eLateFragmentTests, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests
+                | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+            vk::ImageAspectFlagBits::eDepth
+        );
+
+        transition(commands, normals,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead
+        );
+
+        record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_targets,
+            AoPushData{.frame = draws.frame, .depth = draws.screen.depth, .normals = draws.screen.normals});
+
+        // Pass 3: the lighting
+
+        // The HDR image is shared by the frames in flight too: this waits for the previous frame's tone mapping to finish reading it.
+        transition(commands, hdr,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
+        );
+
+        // Every pixel is drawn over, by the scene or the sky; clearing is just cheaper than loading what was there.
+        const vk::RenderingAttachmentInfo hdr_attachment{
+            .imageView = *swapchain.hdr.view,
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}},
+        };
+
+        // The prepass's depth, loaded and tested against but not written.
+        const vk::RenderingAttachmentInfo lighting_depth{
+            .imageView = *swapchain.depth.view,
+            .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+            .loadOp = vk::AttachmentLoadOp::eLoad,
+            .storeOp = vk::AttachmentStoreOp::eNone,
+        };
+
+        commands.beginRendering(vk::RenderingInfo{
+            .renderArea = whole_image,
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &hdr_attachment,
             .pDepthAttachment = &lighting_depth,
         });
 
-        // The viewport and scissor set earlier still apply: dynamic state
-        // lasts for the whole command buffer.
-        draw_mode(commands, culling, draws, AlphaMode::blend, pipelines.transparency);
-        commands.endRendering();
+        set_viewport(commands, swapchain.extent);
 
-        // The composite reads both sums, and blends into the HDR image, which
-        // the lighting pass just wrote: the same layout, but its writes must
-        // land before the blend reads them.
-        for (const vk::Image sum : {accum, reveal}) {
-            transition(commands, sum,
-                vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
-                vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead
-            );
+        for (std::size_t i = 0; i < solid_modes.size(); ++i) {
+            draw_mode(commands, culling, draws, solid_modes[i], pipelines.lighting[i]);
         }
 
+        // The sky goes in once everything solid is drawn: it only covers pixels still at depth 0, infinitely far.
+        commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.background);
+
+        const PushData sky_push{.frame = draws.frame};
+        commands.pushDataEXT(vk::PushDataInfoEXT{
+            .offset = 0,
+            .data = {.address = &sky_push, .size = sizeof(sky_push)},
+        });
+
+        commands.draw(3, 1, 0, 0);
+        commands.endRendering();
+
+        // Pass 4: transparency
+
+        if (draws.see_through) {
+            const vk::Image accum = *swapchain.accum.handle;
+            const vk::Image reveal = *swapchain.reveal.handle;
+
+            // Both sums are shared by the frames in flight: this waits for the previous frame's composite to finish reading them.
+            for (const vk::Image sum : {accum, reveal}) {
+                transition(commands, sum,
+                    vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+                    vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead,
+                    vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                    vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite
+                );
+            }
+
+            // Before any layer: nothing summed, and the whole scene showing through.
+            const std::array sum_attachments{
+                vk::RenderingAttachmentInfo{
+                    .imageView = *swapchain.accum.view,
+                    .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                    .loadOp = vk::AttachmentLoadOp::eClear,
+                    .storeOp = vk::AttachmentStoreOp::eStore,
+                    .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{0.0f, 0.0f, 0.0f, 0.0f}}},
+                },
+                vk::RenderingAttachmentInfo{
+                    .imageView = *swapchain.reveal.view,
+                    .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                    .loadOp = vk::AttachmentLoadOp::eClear,
+                    .storeOp = vk::AttachmentStoreOp::eStore,
+                    .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{1.0f, 0.0f, 0.0f, 0.0f}}},
+                },
+            };
+
+            // The same depth as the lighting pass: tested, not written, so a see-through surface behind a solid one is hidden, and one behind another see-through one still counts.
+            commands.beginRendering(vk::RenderingInfo{
+                .renderArea = whole_image,
+                .layerCount = 1,
+                .colorAttachmentCount = static_cast<std::uint32_t>(sum_attachments.size()),
+                .pColorAttachments = sum_attachments.data(),
+                .pDepthAttachment = &lighting_depth,
+            });
+
+            // The viewport and scissor set earlier still apply: dynamic state lasts for the whole command buffer.
+            draw_mode(commands, culling, draws, AlphaMode::blend, pipelines.transparency);
+            commands.endRendering();
+
+            // The composite reads both sums, and blends into the HDR image, which the lighting pass just wrote: the same layout, but its writes must land before the blend reads them.
+            for (const vk::Image sum : {accum, reveal}) {
+                transition(commands, sum,
+                    vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                    vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
+                    vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead
+                );
+            }
+
+            transition(commands, hdr,
+                vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eColorAttachmentOptimal,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite
+            );
+
+            // The lit scene is kept and blended into.
+            const vk::RenderingAttachmentInfo scene_attachment{
+                .imageView = *swapchain.hdr.view,
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eLoad,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+            };
+
+            commands.beginRendering(vk::RenderingInfo{
+                .renderArea = whole_image,
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &scene_attachment,
+            });
+
+            commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.composite);
+
+            const CompositePushData composite_push{.accum = draws.screen.accum, .reveal = draws.screen.reveal};
+            commands.pushDataEXT(vk::PushDataInfoEXT{
+                .offset = 0,
+                .data = {.address = &composite_push, .size = sizeof(composite_push)},
+            });
+
+            commands.draw(3, 1, 0, 0);
+            commands.endRendering();
+        }
+
+        // Pass 5: tone mapping
+
+        // The scene is finished: the tone-mapping shader may read it now.
         transition(commands, hdr,
-            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead
         );
 
-        // The lit scene is kept and blended into.
-        const vk::RenderingAttachmentInfo scene_attachment{
-            .imageView = *swapchain.hdr.view,
+        // Undefined: every pixel is about to be overwritten.
+        transition(commands, image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
+        );
+
+        // The full-screen triangle writes every pixel, so there's nothing to clear or load first.
+        const vk::RenderingAttachmentInfo color_attachment{
+            .imageView = *swapchain.views[image_index],
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eLoad,
+            .loadOp = vk::AttachmentLoadOp::eDontCare,
             .storeOp = vk::AttachmentStoreOp::eStore,
         };
 
@@ -3880,163 +3497,116 @@ void record_frame(
             .renderArea = whole_image,
             .layerCount = 1,
             .colorAttachmentCount = 1,
-            .pColorAttachments = &scene_attachment,
+            .pColorAttachments = &color_attachment,
         });
 
-        commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.composite);
+        commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.tonemap);
 
-        const CompositePushData composite_push{.accum = draws.screen.accum, .reveal = draws.screen.reveal};
+        const TonemapPushData push{.hdr_image = draws.screen.hdr, .view = draws.view};
+
         commands.pushDataEXT(vk::PushDataInfoEXT{
             .offset = 0,
-            .data = {.address = &composite_push, .size = sizeof(composite_push)},
+            .data = {.address = &push, .size = sizeof(push)},
         });
 
         commands.draw(3, 1, 0, 0);
         commands.endRendering();
+
+        transition(commands, image,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
+        );
+
+        commands.end();
     }
 
-    // --- Pass 5: tone mapping ------------------------------------------------
+    // Events
 
-    // The scene is finished: the tone-mapping shader may read it now.
-    transition(commands, hdr,
-        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead
-    );
-
-    // Undefined: every pixel is about to be overwritten.
-    transition(commands, image,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-    );
-
-    // The full-screen triangle writes every pixel, so there's nothing to
-    // clear or load first.
-    const vk::RenderingAttachmentInfo color_attachment{
-        .imageView = *swapchain.views[image_index],
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eDontCare,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+    // What the keyboard controls, besides the camera.
+    struct Settings {
+        View view = View::lit;
+        SkySource sky = SkySource::atmosphere;
+        float hours = 10.0f;                    // time of day, 0 to 24
+        float exposure_compensation = 0.0f;     // stops brighter (+) or darker (-) than metered
+        bool ambient_occlusion = true;
     };
 
-    commands.beginRendering(vk::RenderingInfo{
-        .renderArea = whole_image,
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment,
-    });
+    // The views' names, in View's order, for the window title.
+    constexpr std::array view_names{
+        "Lit", "Base color", "Normal", "Vertex normal", "Metallic", "Roughness", "Occlusion", "Emissive", "Ambient occlusion",
+        "Sun shadow",
+    };
 
-    commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.tonemap);
+    // Handles every pending event and fills in `input` for this frame. False once the window was closed or Escape pressed.
+    //   1-9 0 pick the view: 0 is the tenth, as on the keyboard
+    //   e     switch between the simulated sky and the photographed one
+    //   o     switch ambient occlusion off and on, to compare
+    //   [ ]   time of day, a quarter of an hour earlier or later
+    //   - =   exposure, half a stop darker or brighter: like a camera's exposure compensation, + is brighter
+    // Holding a key repeats it.
+    bool poll_events(SDL_Window *window, CameraInput &input, Settings &settings) {
+        input = CameraInput{};
+        SDL_Event event;
 
-    const TonemapPushData push{.hdr_image = draws.screen.hdr, .view = draws.view};
+        while (SDL_PollEvent(&event)) {
+            const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
 
-    commands.pushDataEXT(vk::PushDataInfoEXT{
-        .offset = 0,
-        .data = {.address = &push, .size = sizeof(push)},
-    });
+            if (event.type == SDL_EVENT_QUIT || escape) {
+                return false;
+            }
 
-    commands.draw(3, 1, 0, 0);
-    commands.endRendering();
+            if (event.type == SDL_EVENT_KEY_DOWN) {
+                const SDL_Keycode key = event.key.key;
 
-    transition(commands, image,
-        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
-    );
+                // SDLK_1 to SDLK_9 are consecutive key codes; SDLK_0 comes before them.
+                if (key >= SDLK_1 && key <= SDLK_9) {
+                    settings.view = static_cast<View>(key - SDLK_1);
+                } else if (key == SDLK_0) {
+                    settings.view = View::shadow;
+                } else if (key == SDLK_O) {
+                    settings.ambient_occlusion = !settings.ambient_occlusion;
+                } else if (key == SDLK_E) {
+                    settings.sky = settings.sky == SkySource::atmosphere ? SkySource::photograph : SkySource::atmosphere;
+                } else if (key == SDLK_LEFTBRACKET) {
+                    settings.hours = std::fmod(settings.hours + 23.75f, 24.0f);
+                } else if (key == SDLK_RIGHTBRACKET) {
+                    settings.hours = std::fmod(settings.hours + 0.25f, 24.0f);
+                } else if (key == SDLK_MINUS) {
+                    settings.exposure_compensation -= 0.5f;
+                } else if (key == SDLK_EQUALS) {
+                    settings.exposure_compensation += 0.5f;
+                }
+            }
 
-    commands.end();
-}
-
-// --- Events ------------------------------------------------------------------
-
-// What the keyboard controls, besides the camera.
-struct Settings {
-    View view = View::lit;
-    SkySource sky = SkySource::atmosphere;
-    float hours = 10.0f;                    // time of day, 0 to 24
-    float exposure_compensation = 0.0f;     // stops brighter (+) or darker (-) than metered
-    bool ambient_occlusion = true;
-};
-
-// The views' names, in View's order, for the window title.
-constexpr std::array view_names{
-    "Lit", "Base color", "Normal", "Vertex normal", "Metallic", "Roughness", "Occlusion", "Emissive", "Ambient occlusion",
-    "Sun shadow",
-};
-
-// Handles every pending event and fills in `input` for this frame. False once
-// the window was closed or Escape pressed.
-//   1-9 0 pick the view: 0 is the tenth, as on the keyboard
-//   e     switch between the simulated sky and the photographed one
-//   o     switch ambient occlusion off and on, to compare
-//   [ ]   time of day, a quarter of an hour earlier or later
-//   - =   exposure, half a stop darker or brighter: like a camera's
-//         exposure compensation, + is brighter
-// Holding a key repeats it.
-bool poll_events(SDL_Window *window, CameraInput &input, Settings &settings) {
-    input = CameraInput{};
-    SDL_Event event;
-
-    while (SDL_PollEvent(&event)) {
-        const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
-
-        if (event.type == SDL_EVENT_QUIT || escape) {
-            return false;
-        }
-
-        if (event.type == SDL_EVENT_KEY_DOWN) {
-            const SDL_Keycode key = event.key.key;
-
-            // SDLK_1 to SDLK_9 are consecutive key codes; SDLK_0 comes before them.
-            if (key >= SDLK_1 && key <= SDLK_9) {
-                settings.view = static_cast<View>(key - SDLK_1);
-            } else if (key == SDLK_0) {
-                settings.view = View::shadow;
-            } else if (key == SDLK_O) {
-                settings.ambient_occlusion = !settings.ambient_occlusion;
-            } else if (key == SDLK_E) {
-                settings.sky = settings.sky == SkySource::atmosphere ? SkySource::photograph : SkySource::atmosphere;
-            } else if (key == SDLK_LEFTBRACKET) {
-                settings.hours = std::fmod(settings.hours + 23.75f, 24.0f);
-            } else if (key == SDLK_RIGHTBRACKET) {
-                settings.hours = std::fmod(settings.hours + 0.25f, 24.0f);
-            } else if (key == SDLK_MINUS) {
-                settings.exposure_compensation -= 0.5f;
-            } else if (key == SDLK_EQUALS) {
-                settings.exposure_compensation += 0.5f;
+            if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                input.mouse_delta += glm::vec2{event.motion.xrel, event.motion.yrel};
+            } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                input.wheel += event.wheel.y;
             }
         }
 
-        if (event.type == SDL_EVENT_MOUSE_MOTION) {
-            input.mouse_delta += glm::vec2{event.motion.xrel, event.motion.yrel};
-        } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-            input.wheel += event.wheel.y;
+        // Which buttons are held right now.
+        const SDL_MouseButtonFlags buttons = SDL_GetMouseState(nullptr, nullptr);
+        input.right_button = (buttons & SDL_BUTTON_RMASK) != 0;
+        input.left_button = (buttons & SDL_BUTTON_LMASK) != 0;
+        input.middle_button = (buttons & SDL_BUTTON_MMASK) != 0;
+
+        // While a button is held, relative mode hides the cursor and keeps reporting movement, so a drag can't run into the edge of the screen.
+        const bool dragging = input.right_button || input.left_button || input.middle_button;
+
+        if (dragging != SDL_GetWindowRelativeMouseMode(window)) {
+            SDL_SetWindowRelativeMouseMode(window, dragging);
         }
+
+        return true;
     }
-
-    // Which buttons are held right now.
-    const SDL_MouseButtonFlags buttons = SDL_GetMouseState(nullptr, nullptr);
-    input.right_button = (buttons & SDL_BUTTON_RMASK) != 0;
-    input.left_button = (buttons & SDL_BUTTON_LMASK) != 0;
-    input.middle_button = (buttons & SDL_BUTTON_MMASK) != 0;
-
-    // While a button is held, relative mode hides the cursor and keeps
-    // reporting movement, so a drag can't run into the edge of the screen.
-    const bool dragging = input.right_button || input.left_button || input.middle_button;
-
-    if (dragging != SDL_GetWindowRelativeMouseMode(window)) {
-        SDL_SetWindowRelativeMouseMode(window, dragging);
-    }
-
-    return true;
-}
 
 }  // namespace
 
 int main() {
     try {
-        // --- Window and instance ---------------------------------------------
+        // Window and instance
 
         SdlContext sdl;
         const int version = SDL_GetVersion();
@@ -4053,9 +3623,7 @@ int main() {
 #endif
         std::println("Validation layer {}", validation ? "on" : "off");
 
-        // Declaration order matters: each object is destroyed before the ones above it.
-        // The window comes first: creating it loads Vulkan into SDL, which
-        // required_vulkan_extensions() needs.
+        // Declaration order matters: each object is destroyed before the ones above it. The window comes first: creating it loads Vulkan into SDL, which required_vulkan_extensions() needs.
         Window window = make_vulkan_window(1920, 1080, "game-engine", true);
 
         vk::raii::Instance instance = create_instance(context, SdlContext::required_vulkan_extensions(), validation);
@@ -4065,7 +3633,7 @@ int main() {
 
         vk::raii::SurfaceKHR surface = create_surface(instance, window.get());
 
-        // --- GPU, device and swapchain ---------------------------------------
+        // GPU, device and swapchain
 
         std::println("GPUs:");
         std::optional<GpuChoice> gpu = pick_gpu(instance, surface);
@@ -4082,15 +3650,11 @@ int main() {
         vk::raii::Queue queue = device.getQueue(gpu->queue_family, 0);
         Swapchain swapchain = create_swapchain(device, *gpu, surface, window.get());
 
-        // --- Pipelines -------------------------------------------------------
+        // Pipelines
 
-        // recreate_swapchain() picks the same formats again, so the pipelines
-        // stay valid across resizes.
-        //   - The prepass draws normals and depth, and the lighting pass the
-        //     HDR image, for opaque and masked materials. The transparency
-        //     pass draws blended ones into its two sums.
-        //   - The sky draws into the HDR image, behind the scene, and the
-        //     composite over it; tone mapping writes the swapchain image.
+        // recreate_swapchain() picks the same formats again, so the pipelines stay valid across resizes.
+        //   - The prepass draws normals and depth, and the lighting pass the HDR image, for opaque and masked materials. The transparency pass draws blended ones into its two sums.
+        //   - The sky draws into the HDR image, behind the scene, and the composite over it; tone mapping writes the swapchain image.
         ScenePipelines pipelines;
 
         for (const AlphaMode mode : solid_modes) {
@@ -4109,7 +3673,7 @@ int main() {
 
         const AmbientOcclusion ambient_occlusion = create_ambient_occlusion(device);
 
-        // --- Per-frame resources ---------------------------------------------
+        // Per-frame resources
 
         // eResetCommandBuffer lets us re-record each frame's command buffer.
         vk::raii::CommandPool command_pool(device, vk::CommandPoolCreateInfo{
@@ -4131,8 +3695,7 @@ int main() {
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
             auto *mapped = static_cast<FrameData*>(data.memory.mapMemory(0, sizeof(FrameData)));
 
-            // Starts zeroed: the first wait on each frame reads it before
-            // the GPU has written it.
+            // Starts zeroed: the first wait on each frame reads it before the GPU has written it.
             Buffer cull_totals = create_buffer(device, *gpu, sizeof(CullTotals), vk::BufferUsageFlagBits::eTransferDst,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
             auto *totals = static_cast<CullTotals*>(cull_totals.memory.mapMemory(0, sizeof(CullTotals)));
@@ -4150,14 +3713,12 @@ int main() {
             });
         }
 
-        // --- Scene -----------------------------------------------------------
+        // Scene
 
         // The glTF file to draw, under lecture-md/game-engine/assets.
         const std::filesystem::path scene_file = std::filesystem::path(ASSET_DIR) / "Sponza/Sponza.gltf";
 
-        // Where in the world the scene is placed, in metres: its origin. Move
-        // it far away, to {100000.0, 0.0, 100000.0} say, 141 km out, and the
-        // image stays the same: everything is drawn relative to the camera.
+        // Where in the world the scene is placed, in metres: its origin. Move it far away, to {100000.0, 0.0, 100000.0} say, 141 km out, and the image stays the same: everything is drawn relative to the camera.
         const glm::dvec3 scene_origin{0.0, 0.0, 0.0};
 
         const std::uint64_t load_start = SDL_GetTicksNS();
@@ -4166,15 +3727,10 @@ int main() {
             scene_file.filename().string(), scene.vertices.size(), scene.indices.size() / 3,
             scene.primitives.size(), scene.draws.size(), scene.materials.size(), scene.images.size());
 
-        // Ground under the scene, out to 32 km each way: something to see the
-        // air over, as far as the aerial perspective reaches. 1 cm below the
-        // scene's lowest point, so it never fights the scene's own floor.
+        // Ground under the scene, out to 32 km each way: something to see the air over, as far as the aerial perspective reaches. 1 cm below the scene's lowest point, so it never fights the scene's own floor.
         add_ground(scene, scene_origin, static_cast<double>(scene.bounds_min.y) - 0.01, 65536.0, 1024.0);
 
-        // Each draw's matrices, triangles and box, and what the cull needs to
-        // group it. The normal matrix is the transposed inverse of the model
-        // matrix: under non-uniform scale, transforming a normal by the model
-        // matrix itself would tilt it off the surface.
+        // Each draw's matrices, triangles and box, and what the cull needs to group it. The normal matrix is the transposed inverse of the model matrix: under non-uniform scale, transforming a normal by the model matrix itself would tilt it off the surface.
         std::vector<DrawData> draw_data;
         std::vector<CullDraw> cull_draws;
         std::array<std::size_t, 3> mode_draws{};  // how many draws of each alpha mode
@@ -4206,10 +3762,7 @@ int main() {
 
         std::println("Draws: {} opaque, {} masked, {} blended", mode_draws[0], mode_draws[1], mode_draws[2]);
 
-        // Vertices and draw data are read through pointers; indices go to the
-        // GPU's index fetch, so that buffer is an index buffer. Vertices and
-        // indices are also what the acceleration structures are built from,
-        // and shadow rays read indices through a pointer too.
+        // Vertices and draw data are read through pointers; indices go to the GPU's index fetch, so that buffer is an index buffer. Vertices and indices are also what the acceleration structures are built from, and shadow rays read indices through a pointer too.
         const vk::BufferUsageFlags build_input = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
             | vk::BufferUsageFlagBits::eShaderDeviceAddress;
         const Buffer vertex_buffer = upload_buffer(device, *gpu, queue, command_pool,
@@ -4224,14 +3777,13 @@ int main() {
 
         std::println("Culling: {} draws in {} groups", culling.draw_count, culling.group_count);
 
-        // Most files have no lights, and a buffer can't be empty: then there's
-        // no buffer, and the shader's light count is 0.
+        // Most files have no lights, and a buffer can't be empty: then there's no buffer, and the shader's light count is 0.
         const Buffer light_buffer = scene.lights.empty() ? Buffer{} : upload_buffer(device, *gpu, queue, command_pool,
             std::as_bytes(std::span(scene.lights)), vk::BufferUsageFlagBits::eShaderDeviceAddress);
 
         std::println("Lights: {} from the file, plus the sun", scene.lights.size());
 
-        // --- Acceleration structures -----------------------------------------
+        // Acceleration structures
 
         const std::uint64_t acceleration_start = SDL_GetTicksNS();
         // Around the cell the camera starts in: the scene's origin.
@@ -4241,10 +3793,9 @@ int main() {
         std::println("Acceleration structures: {} BLAS, {} instances in {:.0f} ms", acceleration.blases.size(),
             scene.draws.size(), static_cast<double>(SDL_GetTicksNS() - acceleration_start) * 1e-6);
 
-        // --- Textures and materials ------------------------------------------
+        // Textures and materials
 
-        // Decode every image, upload them with mipmaps, and describe them in
-        // the descriptor heap. Texture 0 is white; scene image i is texture i + 1.
+        // Decode every image, upload them with mipmaps, and describe them in the descriptor heap. Texture 0 is white; scene image i is texture i + 1.
         const std::uint64_t texture_start = SDL_GetTicksNS();
         const std::vector<Texture> textures = create_scene_textures(device, *gpu, queue, command_pool, scene);
         // After the textures: the swapchain images' slots, then the environment's.
@@ -4268,8 +3819,7 @@ int main() {
             .reveal = first_screen_slot + 10,
         };
 
-        // The swapchain's images are recreated with it, so their descriptors
-        // are rewritten every time: after this, only while the GPU is idle.
+        // The swapchain's images are recreated with it, so their descriptors are rewritten every time: after this, only while the GPU is idle.
         const auto describe_screen = [&] {
             const auto whole = [](const Image &image, vk::ImageAspectFlags aspect) {
                 return vk::ImageViewCreateInfo{
@@ -4297,14 +3847,13 @@ int main() {
 
         describe_screen();
 
-        // recreate_swapchain() waits for the GPU to go idle, so the slots are
-        // free to rewrite straight afterwards.
+        // recreate_swapchain() waits for the GPU to go idle, so the slots are free to rewrite straight afterwards.
         const auto resize = [&] {
             recreate_swapchain(swapchain, device, *gpu, surface, window.get());
             describe_screen();
         };
 
-        // --- The environment -------------------------------------------------
+        // The environment
 
         const std::uint64_t environment_start = SDL_GetTicksNS();
         Environment environment = create_environment(device, *gpu, queue, command_pool, heaps, first_screen_slot + screen_slot_count,
@@ -4316,9 +3865,7 @@ int main() {
             static_cast<double>(SDL_GetTicksNS() - texture_start) * 1e-6,
             static_cast<double>(SDL_GetTicksNS() - load_start) * 1e-6);
 
-        // Heap indices are one past the scene's: image i is texture i + 1 and
-        // sampler i is sampler i + 1, so "none" (-1) becomes 0, the white
-        // texture or the default sampler.
+        // Heap indices are one past the scene's: image i is texture i + 1 and sampler i is sampler i + 1, so "none" (-1) becomes 0, the white texture or the default sampler.
         const auto slot = [](const TextureRef &ref) {
             return TextureSlot{
                 .texture = static_cast<std::uint32_t>(ref.image + 1),
@@ -4362,7 +3909,7 @@ int main() {
 
         std::uint64_t previous_ticks = SDL_GetTicksNS();
 
-        // --- Frame loop ------------------------------------------------------
+        // Frame loop
 
         std::uint64_t frame_count = 0;
 
@@ -4381,7 +3928,7 @@ int main() {
                 resize();
             }
 
-            // --- Update -----------------------------------------------------
+            // Update
 
             // Seconds since the last frame, so movement doesn't depend on frame rate.
             const std::uint64_t ticks = SDL_GetTicksNS();
@@ -4392,13 +3939,9 @@ int main() {
 
             const float aspect = static_cast<float>(swapchain.extent.width) / static_cast<float>(swapchain.extent.height);
 
-            // The sky: rebuilt whenever its source changes, or the time of day
-            // moves the sun in the simulated one. That takes a few milliseconds
-            // and waits for the GPU, which is fine for a key press.
+            // The sky: rebuilt whenever its source changes, or the time of day moves the sun in the simulated one. That takes a few milliseconds and waits for the GPU, which is fine for a key press.
             const glm::vec3 sun_direction = sun_direction_at(settings.hours);
-            // The camera's height above the ground, which is at y = 0. The
-            // simulated sky is lit for it too, so climbing far enough, 100 m,
-            // rebuilds it.
+            // The camera's height above the ground, which is at y = 0. The simulated sky is lit for it too, so climbing far enough, 100 m, rebuilds it.
             const auto altitude = static_cast<float>(std::max(camera.position.y, 1.0));
             const bool sky_moved = settings.sky == SkySource::atmosphere
                 && (settings.hours != sky_settings.hours || std::abs(altitude - sky_altitude) > 100.0f);
@@ -4409,11 +3952,7 @@ int main() {
                 sky_altitude = altitude;
             }
 
-            // Light and exposure. The meter reads the light falling on flat
-            // ground: the sky's irradiance on an upward-facing surface, plus
-            // the sun's share at its angle (Rec. 709 luminance of each).
-            // Compensation works like a camera's: +1 is a stop brighter, which
-            // means a lower EV (EV measures the light the camera expects).
+            // Light and exposure. The meter reads the light falling on flat ground: the sky's irradiance on an upward-facing surface, plus the sun's share at its angle (Rec. 709 luminance of each). Compensation works like a camera's: +1 is a stop brighter, which means a lower EV (EV measures the light the camera expects).
             const auto luminance = [](glm::vec3 c) { return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b; };
             const glm::vec3 sun_illuminance = environment.mapped->sun_illuminance;
             const float ground_illuminance = luminance(sky_irradiance(*environment.mapped, {0.0f, 1.0f, 0.0f}))
@@ -4422,7 +3961,7 @@ int main() {
             const float ev100 = std::clamp(metered_ev100(ground_illuminance), -2.0f, 16.0f) - settings.exposure_compensation;
             const float exposure = exposure_from_ev100(ev100);
 
-            // --- Render -----------------------------------------------------
+            // Render
 
             Frame &frame = frames[frame_count % frames_in_flight];
 
@@ -4430,13 +3969,10 @@ int main() {
             //    data from last time, then write this frame's data.
             (void)device.waitForFences(*frame.done, vk::True, no_timeout);
 
-            // What the cull kept the last time this frame's resources were
-            // used: two frames ago.
+            // What the cull kept the last time this frame's resources were used: two frames ago.
             const CullTotals totals = *frame.totals;
 
-            // The title shows the view, the sky, the time, the exposure,
-            // whether ambient occlusion is on and what the cull kept,
-            // whenever one changes.
+            // The title shows the view, the sky, the time, the exposure, whether ambient occlusion is on and what the cull kept, whenever one changes.
             if (settings.view != shown_settings.view || settings.sky != shown_settings.sky
                 || settings.hours != shown_settings.hours
                 || settings.exposure_compensation != shown_settings.exposure_compensation
@@ -4455,10 +3991,7 @@ int main() {
                 shown_totals = totals;
             }
 
-            // Where the camera is: a cell and an offset, like everything the
-            // GPU places. Once it's far from the TLAS's origin cell, the TLAS
-            // is rebuilt around the camera's cell. That waits for the GPU to
-            // stop using the old one: a brief pause, once per kilometre or so.
+            // Where the camera is: a cell and an offset, like everything the GPU places. Once it's far from the TLAS's origin cell, the TLAS is rebuilt around the camera's cell. That waits for the GPU to stop using the old one: a brief pause, once per kilometre or so.
             const CellPosition camera_at = to_cell(camera.position);
 
             if (glm::any(glm::greaterThan(glm::abs(camera_at.cell - acceleration.origin_cell), glm::ivec3(tlas_reach_cells)))) {
@@ -4467,8 +4000,7 @@ int main() {
                 std::println("TLAS rebuilt around cell ({}, {}, {})", camera_at.cell.x, camera_at.cell.y, camera_at.cell.z);
             }
 
-            // The view-projection matrix works in camera-relative space: the
-            // view only turns the world, the camera being at its origin.
+            // The view-projection matrix works in camera-relative space: the view only turns the world, the camera being at its origin.
             const glm::mat4 view_projection = camera.projection(aspect) * camera.view();
 
             *frame.mapped = FrameData{
@@ -4567,7 +4099,7 @@ int main() {
             ++frame_count;
         }
 
-        // --- Shutdown --------------------------------------------------------
+        // Shutdown
 
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();

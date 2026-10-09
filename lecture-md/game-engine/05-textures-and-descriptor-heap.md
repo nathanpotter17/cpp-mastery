@@ -80,15 +80,11 @@ To sample a texture, each vertex needs **texture coordinates**, often called "UV
 #include <cstddef>
 #include <cstdint>
 
-// C++ mirrors of the structs in shaders/mesh.slang. The GPU reads these
-// bytes as they are, so the two sides must agree on every size and offset;
-// the static_asserts catch a mismatch at compile time.
+// C++ mirrors of the structs in shaders/mesh.slang. The GPU reads these bytes as they are, so the two sides must agree on every size and offset; the static_asserts catch a mismatch at compile time.
 
-// --- Vertex ------------------------------------------------------------------
+// Vertex
 
-// Slang lays out data behind a pointer like C: no padding between members,
-// so position is at byte 0, normal at 12, uv at 24, and a vertex is 32.
-// A normal of (0, 0, 0) means the file had none (see mesh.slang).
+// Slang lays out data behind a pointer like C: no padding between members, so position is at byte 0, normal at 12, uv at 24, and a vertex is 32. A normal of (0, 0, 0) means the file had none (see mesh.slang).
 struct Vertex {
     glm::vec3 position;
     glm::vec3 normal;
@@ -99,7 +95,7 @@ static_assert(sizeof(Vertex) == 32);
 static_assert(offsetof(Vertex, normal) == 12);
 static_assert(offsetof(Vertex, uv) == 24);
 
-// --- Per-draw data -----------------------------------------------------------
+// Per-draw data
 
 // One per draw, in a GPU buffer the shader indexes.
 struct DrawData {
@@ -112,12 +108,9 @@ static_assert(sizeof(DrawData) == 132);
 static_assert(offsetof(DrawData, normal_matrix) == 64);
 static_assert(offsetof(DrawData, material) == 128);
 
-// --- Materials ---------------------------------------------------------------
+// Materials
 
-// What the shader needs to know about a glTF material, so far. Texture
-// indices count descriptors in the resource heap; 0 is a 1x1 white texture,
-// so a material without a texture multiplies by white. Chapter 6 adds the
-// rest of glTF's material properties.
+// What the shader needs to know about a glTF material, so far. Texture indices count descriptors in the resource heap; 0 is a 1x1 white texture, so a material without a texture multiplies by white. Chapter 6 adds the rest of glTF's material properties.
 struct Material {
     glm::vec4 base_color_factor;      // linear RGBA, multiplies the texture
     std::uint32_t base_color_texture; // resource heap index
@@ -126,10 +119,9 @@ struct Material {
 static_assert(sizeof(Material) == 20);
 static_assert(offsetof(Material, base_color_texture) == 16);
 
-// --- Push data ---------------------------------------------------------------
+// Push data
 
-// Written with vkCmdPushDataEXT before each draw. The push block uses std430
-// rules: the float4x4 comes first, then 8-byte pointers, then the index.
+// Written with vkCmdPushDataEXT before each draw. The push block uses std430 rules: the float4x4 comes first, then 8-byte pointers, then the index.
 struct PushData {
     glm::mat4 view_projection;   // world space -> clip space, the same for every draw
     vk::DeviceAddress vertices;  // where the first Vertex is in GPU memory
@@ -176,8 +168,7 @@ It also has to know which images hold **colors** and which hold **data**, becaus
 #include <string>
 #include <vector>
 
-// One glTF primitive: a run of indices in the scene's index buffer, drawn
-// against the vertices starting at `vertex_offset` in the vertex buffer.
+// One glTF primitive: a run of indices in the scene's index buffer, drawn against the vertices starting at `vertex_offset` in the vertex buffer.
 struct Primitive {
     std::uint32_t first_index = 0;
     std::uint32_t index_count = 0;
@@ -198,23 +189,20 @@ struct SceneImage {
     bool srgb = false;  // holds colors (base color, emissive) rather than data like normals
 };
 
-// One thing to draw: a primitive, placed in the world by a node's transform.
-// A mesh used by several nodes is drawn once per node.
+// One thing to draw: a primitive, placed in the world by a node's transform. A mesh used by several nodes is drawn once per node.
 struct MeshDraw {
     glm::mat4 model{1.0f};
     std::uint32_t primitive = 0;
 };
 
-// Everything from a glTF file that drawing its geometry needs, flattened into
-// arrays ready to upload: every primitive's vertices and indices back to back.
+// Everything from a glTF file that drawing its geometry needs, flattened into arrays ready to upload: every primitive's vertices and indices back to back.
 struct Scene {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
     std::vector<Primitive> primitives;
     std::vector<MeshDraw> draws;
 
-    // The file's materials, plus a plain white one at the end for primitives
-    // that don't name a material.
+    // The file's materials, plus a plain white one at the end for primitives that don't name a material.
     std::vector<SceneMaterial> materials;
     std::vector<SceneImage> images;
 
@@ -223,8 +211,7 @@ struct Scene {
     glm::vec3 bounds_max{std::numeric_limits<float>::lowest()};
 };
 
-// Loads the default scene of a .gltf or .glb file, with its materials and
-// its images, still encoded.
+// Loads the default scene of a .gltf or .glb file, with its materials and its images, still encoded.
 Scene load_gltf(const std::filesystem::path &path);
 ```
 
@@ -247,428 +234,410 @@ Scene load_gltf(const std::filesystem::path &path);
 
 namespace {
 
-// --- Reading accessors -------------------------------------------------------
+    // Reading accessors
 
-// glTF stores vertex data in buffers, viewed through two layers:
-//   buffer      raw bytes, from a .bin file, a data URI, or a .glb's binary chunk
-//   bufferView  a slice of a buffer, with an optional stride between elements
-//   accessor    how to read that slice: element type, count, offset
-// tinygltf loads every buffer into memory; reading elements is up to us.
+    // glTF stores vertex data in buffers, viewed through two layers:
+    //   buffer      raw bytes, from a .bin file, a data URI, or a .glb's binary chunk
+    //   bufferView  a slice of a buffer, with an optional stride between elements
+    //   accessor    how to read that slice: element type, count, offset
+    // tinygltf loads every buffer into memory; reading elements is up to us.
 
-// Copies `count` elements of `element_size` bytes, `stride` apart, starting at
-// `offset` in bufferView `view_index`, after checking they fit in the buffer.
-std::vector<unsigned char> copy_elements(
-    const tinygltf::Model &model, int view_index, std::size_t offset,
-    std::size_t count, std::size_t element_size, std::size_t stride
-) {
-    const tinygltf::BufferView &view = model.bufferViews.at(view_index);
-    const tinygltf::Buffer &buffer = model.buffers.at(view.buffer);
+    // Copies `count` elements of `element_size` bytes, `stride` apart, starting at `offset` in bufferView `view_index`, after checking they fit in the buffer.
+    std::vector<unsigned char> copy_elements(
+        const tinygltf::Model &model, int view_index, std::size_t offset,
+        std::size_t count, std::size_t element_size, std::size_t stride
+    ) {
+        const tinygltf::BufferView &view = model.bufferViews.at(view_index);
+        const tinygltf::Buffer &buffer = model.buffers.at(view.buffer);
 
-    const std::size_t start = view.byteOffset + offset;
-    const std::size_t end = count == 0 ? start : start + (count - 1) * stride + element_size;
+        const std::size_t start = view.byteOffset + offset;
+        const std::size_t end = count == 0 ? start : start + (count - 1) * stride + element_size;
 
-    if (end > view.byteOffset + view.byteLength || end > buffer.data.size()) {
-        throw std::runtime_error("bufferView " + std::to_string(view_index) + " is read past its end");
-    }
-
-    std::vector<unsigned char> elements(count * element_size);
-
-    for (std::size_t i = 0; i < count; ++i) {
-        std::memcpy(elements.data() + i * element_size, buffer.data.data() + start + i * stride, element_size);
-    }
-
-    return elements;
-}
-
-// An accessor's elements packed one after another, whatever the buffer layout:
-//   - byteStride 0 means elements are packed already; otherwise they're spread out,
-//   - without a bufferView every element starts as zeros,
-//   - a sparse accessor then replaces the elements its index list names.
-std::vector<unsigned char> accessor_elements(const tinygltf::Model &model, int accessor_index) {
-    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
-
-    const int component_size = tinygltf::GetComponentSizeInBytes(static_cast<std::uint32_t>(accessor.componentType));
-    const int components = tinygltf::GetNumComponentsInType(static_cast<std::uint32_t>(accessor.type));
-
-    if (component_size <= 0 || components <= 0) {
-        throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has an invalid type");
-    }
-
-    const std::size_t element_size = static_cast<std::size_t>(component_size) * static_cast<std::size_t>(components);
-    std::vector<unsigned char> elements(accessor.count * element_size, 0);
-
-    if (accessor.bufferView >= 0) {
-        const int byte_stride = accessor.ByteStride(model.bufferViews.at(accessor.bufferView));
-
-        if (byte_stride <= 0) {
-            throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has an invalid byte stride");
+        if (end > view.byteOffset + view.byteLength || end > buffer.data.size()) {
+            throw std::runtime_error("bufferView " + std::to_string(view_index) + " is read past its end");
         }
 
-        elements = copy_elements(model, accessor.bufferView, accessor.byteOffset, accessor.count,
-            element_size, static_cast<std::size_t>(byte_stride));
-    }
-
-    if (accessor.sparse.isSparse) {
-        const auto &sparse = accessor.sparse;
-        const int index_size = tinygltf::GetComponentSizeInBytes(static_cast<std::uint32_t>(sparse.indices.componentType));
-        const auto count = static_cast<std::size_t>(sparse.count);
-
-        const std::vector<unsigned char> indices = copy_elements(model, sparse.indices.bufferView,
-            sparse.indices.byteOffset, count, static_cast<std::size_t>(index_size), static_cast<std::size_t>(index_size));
-        const std::vector<unsigned char> values = copy_elements(model, sparse.values.bufferView,
-            sparse.values.byteOffset, count, element_size, element_size);
+        std::vector<unsigned char> elements(count * element_size);
 
         for (std::size_t i = 0; i < count; ++i) {
-            std::uint32_t target = 0;
+            std::memcpy(elements.data() + i * element_size, buffer.data.data() + start + i * stride, element_size);
+        }
 
-            switch (index_size) {
-                case 1: target = indices[i]; break;
-                case 2: { std::uint16_t v; std::memcpy(&v, &indices[i * 2], 2); target = v; break; }
-                case 4: std::memcpy(&target, &indices[i * 4], 4); break;
-                default: throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has invalid sparse indices");
+        return elements;
+    }
+
+    // An accessor's elements packed one after another, whatever the buffer layout:
+    //   - byteStride 0 means elements are packed already; otherwise they're spread out,
+    //   - without a bufferView every element starts as zeros,
+    //   - a sparse accessor then replaces the elements its index list names.
+    std::vector<unsigned char> accessor_elements(const tinygltf::Model &model, int accessor_index) {
+        const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
+
+        const int component_size = tinygltf::GetComponentSizeInBytes(static_cast<std::uint32_t>(accessor.componentType));
+        const int components = tinygltf::GetNumComponentsInType(static_cast<std::uint32_t>(accessor.type));
+
+        if (component_size <= 0 || components <= 0) {
+            throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has an invalid type");
+        }
+
+        const std::size_t element_size = static_cast<std::size_t>(component_size) * static_cast<std::size_t>(components);
+        std::vector<unsigned char> elements(accessor.count * element_size, 0);
+
+        if (accessor.bufferView >= 0) {
+            const int byte_stride = accessor.ByteStride(model.bufferViews.at(accessor.bufferView));
+
+            if (byte_stride <= 0) {
+                throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has an invalid byte stride");
             }
 
-            if (target >= accessor.count) {
-                throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has a sparse index out of range");
+            elements = copy_elements(model, accessor.bufferView, accessor.byteOffset, accessor.count,
+                element_size, static_cast<std::size_t>(byte_stride));
+        }
+
+        if (accessor.sparse.isSparse) {
+            const auto &sparse = accessor.sparse;
+            const int index_size = tinygltf::GetComponentSizeInBytes(static_cast<std::uint32_t>(sparse.indices.componentType));
+            const auto count = static_cast<std::size_t>(sparse.count);
+
+            const std::vector<unsigned char> indices = copy_elements(model, sparse.indices.bufferView,
+                sparse.indices.byteOffset, count, static_cast<std::size_t>(index_size), static_cast<std::size_t>(index_size));
+            const std::vector<unsigned char> values = copy_elements(model, sparse.values.bufferView,
+                sparse.values.byteOffset, count, element_size, element_size);
+
+            for (std::size_t i = 0; i < count; ++i) {
+                std::uint32_t target = 0;
+
+                switch (index_size) {
+                    case 1: target = indices[i]; break;
+                    case 2: { std::uint16_t v; std::memcpy(&v, &indices[i * 2], 2); target = v; break; }
+                    case 4: std::memcpy(&target, &indices[i * 4], 4); break;
+                    default: throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has invalid sparse indices");
+                }
+
+                if (target >= accessor.count) {
+                    throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has a sparse index out of range");
+                }
+
+                std::memcpy(&elements[target * element_size], &values[i * element_size], element_size);
             }
-
-            std::memcpy(&elements[target * element_size], &values[i * element_size], element_size);
         }
+
+        return elements;
     }
 
-    return elements;
-}
+    // Reads an accessor as floats, `components` per element. Besides 32-bit floats, glTF allows integers here (KHR_mesh_quantization), and "normalized" integers mean a fraction of their range: 255 as an unsigned byte is 1.0.
+    std::vector<float> read_floats(const tinygltf::Model &model, int accessor_index, int components) {
+        const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
 
-// Reads an accessor as floats, `components` per element. Besides 32-bit
-// floats, glTF allows integers here (KHR_mesh_quantization), and "normalized"
-// integers mean a fraction of their range: 255 as an unsigned byte is 1.0.
-std::vector<float> read_floats(const tinygltf::Model &model, int accessor_index, int components) {
-    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
+        if (tinygltf::GetNumComponentsInType(static_cast<std::uint32_t>(accessor.type)) != components) {
+            throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has the wrong number of components");
+        }
 
-    if (tinygltf::GetNumComponentsInType(static_cast<std::uint32_t>(accessor.type)) != components) {
-        throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has the wrong number of components");
+        const std::vector<unsigned char> bytes = accessor_elements(model, accessor_index);
+        std::vector<float> values(accessor.count * static_cast<std::size_t>(components));
+
+        // Component i of type T, converted to float.
+        const auto convert = [&]<typename T>(float normalize_by) {
+            for (std::size_t i = 0; i < values.size(); ++i) {
+                T value;
+                std::memcpy(&value, bytes.data() + i * sizeof(T), sizeof(T));
+
+                // The spec's rule for signed values clamps the most negative one to -1.
+                values[i] = accessor.normalized ? std::max(static_cast<float>(value) / normalize_by, -1.0f) : static_cast<float>(value);
+            }
+        };
+
+        switch (accessor.componentType) {
+            case TINYGLTF_COMPONENT_TYPE_FLOAT: std::memcpy(values.data(), bytes.data(), bytes.size()); break;
+            case TINYGLTF_COMPONENT_TYPE_BYTE: convert.operator()<std::int8_t>(127.0f); break;
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: convert.operator()<std::uint8_t>(255.0f); break;
+            case TINYGLTF_COMPONENT_TYPE_SHORT: convert.operator()<std::int16_t>(32767.0f); break;
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: convert.operator()<std::uint16_t>(65535.0f); break;
+            default: throw std::runtime_error("accessor " + std::to_string(accessor_index) + " can't be read as floats");
+        }
+
+        return values;
     }
 
-    const std::vector<unsigned char> bytes = accessor_elements(model, accessor_index);
-    std::vector<float> values(accessor.count * static_cast<std::size_t>(components));
+    std::vector<glm::vec3> read_vec3(const tinygltf::Model &model, int accessor_index) {
+        const std::vector<float> floats = read_floats(model, accessor_index, 3);
+        std::vector<glm::vec3> values(floats.size() / 3);
+        std::memcpy(values.data(), floats.data(), floats.size() * sizeof(float));
+        return values;
+    }
 
-    // Component i of type T, converted to float.
-    const auto convert = [&]<typename T>(float normalize_by) {
-        for (std::size_t i = 0; i < values.size(); ++i) {
-            T value;
-            std::memcpy(&value, bytes.data() + i * sizeof(T), sizeof(T));
+    std::vector<glm::vec2> read_vec2(const tinygltf::Model &model, int accessor_index) {
+        const std::vector<float> floats = read_floats(model, accessor_index, 2);
+        std::vector<glm::vec2> values(floats.size() / 2);
+        std::memcpy(values.data(), floats.data(), floats.size() * sizeof(float));
+        return values;
+    }
 
-            // The spec's rule for signed values clamps the most negative one to -1.
-            values[i] = accessor.normalized ? std::max(static_cast<float>(value) / normalize_by, -1.0f) : static_cast<float>(value);
+    // Indices may be 8, 16 or 32 bits, even within one file; they're widened to 32 bits so the whole scene can share one index buffer.
+    std::vector<std::uint32_t> read_indices(const tinygltf::Model &model, int accessor_index) {
+        const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
+        const std::vector<unsigned char> bytes = accessor_elements(model, accessor_index);
+        std::vector<std::uint32_t> indices(accessor.count);
+
+        const auto widen = [&]<typename T>() {
+            for (std::size_t i = 0; i < indices.size(); ++i) {
+                T value;
+                std::memcpy(&value, bytes.data() + i * sizeof(T), sizeof(T));
+                indices[i] = value;
+            }
+        };
+
+        switch (accessor.componentType) {
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: widen.operator()<std::uint8_t>(); break;
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: widen.operator()<std::uint16_t>(); break;
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: widen.operator()<std::uint32_t>(); break;
+            default: throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has an invalid index type");
         }
+
+        return indices;
+    }
+
+    // Meshes
+
+    // Where a primitive landed in the scene, plus the box around its vertices in its own space, which visit_node() turns into world-space scene bounds.
+    struct LoadedPrimitive {
+        std::uint32_t index;
+        glm::vec3 local_min;
+        glm::vec3 local_max;
     };
 
-    switch (accessor.componentType) {
-        case TINYGLTF_COMPONENT_TYPE_FLOAT: std::memcpy(values.data(), bytes.data(), bytes.size()); break;
-        case TINYGLTF_COMPONENT_TYPE_BYTE: convert.operator()<std::int8_t>(127.0f); break;
-        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: convert.operator()<std::uint8_t>(255.0f); break;
-        case TINYGLTF_COMPONENT_TYPE_SHORT: convert.operator()<std::int16_t>(32767.0f); break;
-        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: convert.operator()<std::uint16_t>(65535.0f); break;
-        default: throw std::runtime_error("accessor " + std::to_string(accessor_index) + " can't be read as floats");
-    }
+    // Turns triangle strips and fans into a plain list of triangles, keeping every triangle's corners in the same winding order.
+    std::vector<std::uint32_t> to_triangle_list(int mode, const std::vector<std::uint32_t> &indices) {
+        std::vector<std::uint32_t> list;
 
-    return values;
-}
-
-std::vector<glm::vec3> read_vec3(const tinygltf::Model &model, int accessor_index) {
-    const std::vector<float> floats = read_floats(model, accessor_index, 3);
-    std::vector<glm::vec3> values(floats.size() / 3);
-    std::memcpy(values.data(), floats.data(), floats.size() * sizeof(float));
-    return values;
-}
-
-std::vector<glm::vec2> read_vec2(const tinygltf::Model &model, int accessor_index) {
-    const std::vector<float> floats = read_floats(model, accessor_index, 2);
-    std::vector<glm::vec2> values(floats.size() / 2);
-    std::memcpy(values.data(), floats.data(), floats.size() * sizeof(float));
-    return values;
-}
-
-// Indices may be 8, 16 or 32 bits, even within one file; they're widened to
-// 32 bits so the whole scene can share one index buffer.
-std::vector<std::uint32_t> read_indices(const tinygltf::Model &model, int accessor_index) {
-    const tinygltf::Accessor &accessor = model.accessors.at(accessor_index);
-    const std::vector<unsigned char> bytes = accessor_elements(model, accessor_index);
-    std::vector<std::uint32_t> indices(accessor.count);
-
-    const auto widen = [&]<typename T>() {
-        for (std::size_t i = 0; i < indices.size(); ++i) {
-            T value;
-            std::memcpy(&value, bytes.data() + i * sizeof(T), sizeof(T));
-            indices[i] = value;
+        for (std::size_t i = 2; i < indices.size(); ++i) {
+            if (mode == TINYGLTF_MODE_TRIANGLE_STRIP) {
+                // Every other triangle in a strip faces the other way; swap two corners back.
+                const bool even = (i % 2) == 0;
+                list.insert(list.end(), {indices[even ? i - 2 : i - 1], indices[even ? i - 1 : i - 2], indices[i]});
+            } else {
+                // A fan: every triangle shares the first vertex.
+                list.insert(list.end(), {indices[i - 1], indices[i], indices[0]});
+            }
         }
-    };
 
-    switch (accessor.componentType) {
-        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: widen.operator()<std::uint8_t>(); break;
-        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: widen.operator()<std::uint16_t>(); break;
-        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: widen.operator()<std::uint32_t>(); break;
-        default: throw std::runtime_error("accessor " + std::to_string(accessor_index) + " has an invalid index type");
+        return list;
     }
 
-    return indices;
-}
+    // Appends one primitive to the scene. Points, lines, and primitives without positions are skipped, as glTF allows: this renderer draws triangles. `default_material` is used when the primitive doesn't name one.
+    std::optional<LoadedPrimitive> add_primitive(
+        const tinygltf::Model &model, const tinygltf::Primitive &source, std::uint32_t default_material, Scene &scene
+    ) {
+        const auto position = source.attributes.find("POSITION");
+        const bool triangles = source.mode == TINYGLTF_MODE_TRIANGLES
+            || source.mode == TINYGLTF_MODE_TRIANGLE_STRIP
+            || source.mode == TINYGLTF_MODE_TRIANGLE_FAN;
 
-// --- Meshes ------------------------------------------------------------------
+        if (!triangles || position == source.attributes.end()) {
+            return std::nullopt;
+        }
 
-// Where a primitive landed in the scene, plus the box around its vertices in
-// its own space, which visit_node() turns into world-space scene bounds.
-struct LoadedPrimitive {
-    std::uint32_t index;
-    glm::vec3 local_min;
-    glm::vec3 local_max;
-};
+        // The default material sits right after the file's own, so anything at or past it isn't one of the file's materials.
+        if (source.material >= static_cast<int>(default_material)) {
+            throw std::runtime_error("a primitive names a material that doesn't exist");
+        }
 
-// Turns triangle strips and fans into a plain list of triangles, keeping
-// every triangle's corners in the same winding order.
-std::vector<std::uint32_t> to_triangle_list(int mode, const std::vector<std::uint32_t> &indices) {
-    std::vector<std::uint32_t> list;
+        const std::vector<glm::vec3> positions = read_vec3(model, position->second);
 
-    for (std::size_t i = 2; i < indices.size(); ++i) {
-        if (mode == TINYGLTF_MODE_TRIANGLE_STRIP) {
-            // Every other triangle in a strip faces the other way; swap two corners back.
-            const bool even = (i % 2) == 0;
-            list.insert(list.end(), {indices[even ? i - 2 : i - 1], indices[even ? i - 1 : i - 2], indices[i]});
+        // Normals are optional. Missing ones stay (0, 0, 0), which tells the shader to shade the triangle flat, as glTF asks.
+        std::vector<glm::vec3> normals(positions.size(), glm::vec3{0.0f});
+
+        if (const auto normal = source.attributes.find("NORMAL"); normal != source.attributes.end()) {
+            normals = read_vec3(model, normal->second);
+
+            if (normals.size() != positions.size()) {
+                throw std::runtime_error("a primitive has a different number of normals and positions");
+            }
+        }
+
+        // Texture coordinates too; without them every vertex samples the corner (0, 0).
+        std::vector<glm::vec2> uvs(positions.size(), glm::vec2{0.0f});
+
+        if (const auto uv = source.attributes.find("TEXCOORD_0"); uv != source.attributes.end()) {
+            uvs = read_vec2(model, uv->second);
+
+            if (uvs.size() != positions.size()) {
+                throw std::runtime_error("a primitive has a different number of texture coordinates and positions");
+            }
+        }
+
+        // Indices are optional too; without them, vertices form triangles in order.
+        std::vector<std::uint32_t> indices;
+
+        if (source.indices >= 0) {
+            indices = read_indices(model, source.indices);
         } else {
-            // A fan: every triangle shares the first vertex.
-            list.insert(list.end(), {indices[i - 1], indices[i], indices[0]});
+            for (std::uint32_t i = 0; i < positions.size(); ++i) {
+                indices.push_back(i);
+            }
+        }
+
+        if (source.mode != TINYGLTF_MODE_TRIANGLES) {
+            indices = to_triangle_list(source.mode, indices);
+        }
+
+        // An index past the last vertex would make the GPU read another primitive's vertices.
+        for (const std::uint32_t index : indices) {
+            if (index >= positions.size()) {
+                throw std::runtime_error("a primitive's index points past its vertices");
+            }
+        }
+
+        LoadedPrimitive loaded{
+            .index = static_cast<std::uint32_t>(scene.primitives.size()),
+            .local_min = glm::vec3{std::numeric_limits<float>::max()},
+            .local_max = glm::vec3{std::numeric_limits<float>::lowest()},
+        };
+
+        scene.primitives.push_back(Primitive{
+            .first_index = static_cast<std::uint32_t>(scene.indices.size()),
+            .index_count = static_cast<std::uint32_t>(indices.size()),
+            .vertex_offset = static_cast<std::int32_t>(scene.vertices.size()),
+            .material = source.material >= 0 ? static_cast<std::uint32_t>(source.material) : default_material,
+        });
+
+        for (std::size_t i = 0; i < positions.size(); ++i) {
+            scene.vertices.push_back(Vertex{.position = positions[i], .normal = normals[i], .uv = uvs[i]});
+            loaded.local_min = glm::min(loaded.local_min, positions[i]);
+            loaded.local_max = glm::max(loaded.local_max, positions[i]);
+        }
+
+        scene.indices.insert(scene.indices.end(), indices.begin(), indices.end());
+        return loaded;
+    }
+
+    // Nodes
+
+    // A node's transform relative to its parent: either a full matrix, or translation * rotation * scale. glTF stores doubles; we draw with floats.
+    glm::mat4 local_transform(const tinygltf::Node &node) {
+        if (node.matrix.size() == 16) {
+            return glm::mat4(glm::make_mat4(node.matrix.data()));  // column-major, like glm
+        }
+
+        glm::mat4 transform{1.0f};
+
+        if (node.translation.size() == 3) {
+            transform = glm::translate(transform, glm::vec3(glm::make_vec3(node.translation.data())));
+        }
+
+        if (node.rotation.size() == 4) {
+            // glTF stores (x, y, z, w); glm's constructor takes w first.
+            const auto &r = node.rotation;
+            const glm::quat rotation(static_cast<float>(r[3]), static_cast<float>(r[0]),
+                static_cast<float>(r[1]), static_cast<float>(r[2]));
+            transform *= glm::mat4_cast(rotation);
+        }
+
+        if (node.scale.size() == 3) {
+            transform = glm::scale(transform, glm::vec3(glm::make_vec3(node.scale.data())));
+        }
+
+        return transform;
+    }
+
+    // Walks the node tree. Each node's world transform is its parent's times its own, and every primitive of a node's mesh becomes one draw.
+    void visit_node(
+        const tinygltf::Model &model,
+        int node_index,
+        const glm::mat4 &parent,
+        const std::vector<std::vector<LoadedPrimitive>> &mesh_primitives,
+        Scene &scene
+    ) {
+        const tinygltf::Node &node = model.nodes.at(node_index);
+        const glm::mat4 world = parent * local_transform(node);
+
+        if (node.mesh >= 0) {
+            for (const LoadedPrimitive &primitive : mesh_primitives.at(node.mesh)) {
+                scene.draws.push_back(MeshDraw{.model = world, .primitive = primitive.index});
+
+                // Grow the scene bounds by the 8 corners of the primitive's box, moved into world space.
+                for (int corner = 0; corner < 8; ++corner) {
+                    const glm::vec3 local{
+                        corner & 1 ? primitive.local_max.x : primitive.local_min.x,
+                        corner & 2 ? primitive.local_max.y : primitive.local_min.y,
+                        corner & 4 ? primitive.local_max.z : primitive.local_min.z,
+                    };
+                    const glm::vec3 point = glm::vec3(world * glm::vec4(local, 1.0f));
+
+                    scene.bounds_min = glm::min(scene.bounds_min, point);
+                    scene.bounds_max = glm::max(scene.bounds_max, point);
+                }
+            }
+        }
+
+        for (const int child : node.children) {
+            visit_node(model, child, world, mesh_primitives, scene);
         }
     }
 
-    return list;
-}
+    // Materials and images
 
-// Appends one primitive to the scene. Points, lines, and primitives without
-// positions are skipped, as glTF allows: this renderer draws triangles.
-// `default_material` is used when the primitive doesn't name one.
-std::optional<LoadedPrimitive> add_primitive(
-    const tinygltf::Model &model, const tinygltf::Primitive &source, std::uint32_t default_material, Scene &scene
-) {
-    const auto position = source.attributes.find("POSITION");
-    const bool triangles = source.mode == TINYGLTF_MODE_TRIANGLES
-        || source.mode == TINYGLTF_MODE_TRIANGLE_STRIP
-        || source.mode == TINYGLTF_MODE_TRIANGLE_FAN;
-
-    if (!triangles || position == source.attributes.end()) {
-        return std::nullopt;
-    }
-
-    // The default material sits right after the file's own, so anything at or
-    // past it isn't one of the file's materials.
-    if (source.material >= static_cast<int>(default_material)) {
-        throw std::runtime_error("a primitive names a material that doesn't exist");
-    }
-
-    const std::vector<glm::vec3> positions = read_vec3(model, position->second);
-
-    // Normals are optional. Missing ones stay (0, 0, 0), which tells the shader
-    // to shade the triangle flat, as glTF asks.
-    std::vector<glm::vec3> normals(positions.size(), glm::vec3{0.0f});
-
-    if (const auto normal = source.attributes.find("NORMAL"); normal != source.attributes.end()) {
-        normals = read_vec3(model, normal->second);
-
-        if (normals.size() != positions.size()) {
-            throw std::runtime_error("a primitive has a different number of normals and positions");
+    // The image a texture reference points at: material -> texture -> image. -1 if there's no texture, or the texture's image is in a form we don't read (KHR_texture_basisu puts it in an extension instead of `source`).
+    std::int32_t texture_image(const tinygltf::Model &model, int texture_index) {
+        if (texture_index < 0) {
+            return -1;
         }
-    }
 
-    // Texture coordinates too; without them every vertex samples the corner (0, 0).
-    std::vector<glm::vec2> uvs(positions.size(), glm::vec2{0.0f});
+        const int image = model.textures.at(texture_index).source;
 
-    if (const auto uv = source.attributes.find("TEXCOORD_0"); uv != source.attributes.end()) {
-        uvs = read_vec2(model, uv->second);
-
-        if (uvs.size() != positions.size()) {
-            throw std::runtime_error("a primitive has a different number of texture coordinates and positions");
+        if (image >= static_cast<int>(model.images.size())) {
+            throw std::runtime_error("texture " + std::to_string(texture_index) + " points past the last image");
         }
+
+        return image;
     }
 
-    // Indices are optional too; without them, vertices form triangles in order.
-    std::vector<std::uint32_t> indices;
+    void add_materials_and_images(tinygltf::Model &model, Scene &scene) {
+        for (const tinygltf::Material &source : model.materials) {
+            const auto &pbr = source.pbrMetallicRoughness;
 
-    if (source.indices >= 0) {
-        indices = read_indices(model, source.indices);
-    } else {
-        for (std::uint32_t i = 0; i < positions.size(); ++i) {
-            indices.push_back(i);
+            scene.materials.push_back(SceneMaterial{
+                .base_color_factor = glm::vec4(glm::make_vec4(pbr.baseColorFactor.data())),
+                .base_color_image = texture_image(model, pbr.baseColorTexture.index),
+            });
         }
-    }
 
-    if (source.mode != TINYGLTF_MODE_TRIANGLES) {
-        indices = to_triangle_list(source.mode, indices);
-    }
+        // For primitives that don't name a material, glTF's default: plain white.
+        scene.materials.push_back(SceneMaterial{});
 
-    // An index past the last vertex would make the GPU read another primitive's vertices.
-    for (const std::uint32_t index : indices) {
-        if (index >= positions.size()) {
-            throw std::runtime_error("a primitive's index points past its vertices");
+        // The image bytes move out of tinygltf's model; it's discarded afterwards.
+        for (tinygltf::Image &image : model.images) {
+            scene.images.push_back(SceneImage{
+                .encoded = std::move(image.image),
+                .name = image.uri.empty() ? image.name : image.uri,
+            });
         }
-    }
 
-    LoadedPrimitive loaded{
-        .index = static_cast<std::uint32_t>(scene.primitives.size()),
-        .local_min = glm::vec3{std::numeric_limits<float>::max()},
-        .local_max = glm::vec3{std::numeric_limits<float>::lowest()},
-    };
-
-    scene.primitives.push_back(Primitive{
-        .first_index = static_cast<std::uint32_t>(scene.indices.size()),
-        .index_count = static_cast<std::uint32_t>(indices.size()),
-        .vertex_offset = static_cast<std::int32_t>(scene.vertices.size()),
-        .material = source.material >= 0 ? static_cast<std::uint32_t>(source.material) : default_material,
-    });
-
-    for (std::size_t i = 0; i < positions.size(); ++i) {
-        scene.vertices.push_back(Vertex{.position = positions[i], .normal = normals[i], .uv = uvs[i]});
-        loaded.local_min = glm::min(loaded.local_min, positions[i]);
-        loaded.local_max = glm::max(loaded.local_max, positions[i]);
-    }
-
-    scene.indices.insert(scene.indices.end(), indices.begin(), indices.end());
-    return loaded;
-}
-
-// --- Nodes -------------------------------------------------------------------
-
-// A node's transform relative to its parent: either a full matrix, or
-// translation * rotation * scale. glTF stores doubles; we draw with floats.
-glm::mat4 local_transform(const tinygltf::Node &node) {
-    if (node.matrix.size() == 16) {
-        return glm::mat4(glm::make_mat4(node.matrix.data()));  // column-major, like glm
-    }
-
-    glm::mat4 transform{1.0f};
-
-    if (node.translation.size() == 3) {
-        transform = glm::translate(transform, glm::vec3(glm::make_vec3(node.translation.data())));
-    }
-
-    if (node.rotation.size() == 4) {
-        // glTF stores (x, y, z, w); glm's constructor takes w first.
-        const auto &r = node.rotation;
-        const glm::quat rotation(static_cast<float>(r[3]), static_cast<float>(r[0]),
-            static_cast<float>(r[1]), static_cast<float>(r[2]));
-        transform *= glm::mat4_cast(rotation);
-    }
-
-    if (node.scale.size() == 3) {
-        transform = glm::scale(transform, glm::vec3(glm::make_vec3(node.scale.data())));
-    }
-
-    return transform;
-}
-
-// Walks the node tree. Each node's world transform is its parent's times its
-// own, and every primitive of a node's mesh becomes one draw.
-void visit_node(
-    const tinygltf::Model &model,
-    int node_index,
-    const glm::mat4 &parent,
-    const std::vector<std::vector<LoadedPrimitive>> &mesh_primitives,
-    Scene &scene
-) {
-    const tinygltf::Node &node = model.nodes.at(node_index);
-    const glm::mat4 world = parent * local_transform(node);
-
-    if (node.mesh >= 0) {
-        for (const LoadedPrimitive &primitive : mesh_primitives.at(node.mesh)) {
-            scene.draws.push_back(MeshDraw{.model = world, .primitive = primitive.index});
-
-            // Grow the scene bounds by the 8 corners of the primitive's box,
-            // moved into world space.
-            for (int corner = 0; corner < 8; ++corner) {
-                const glm::vec3 local{
-                    corner & 1 ? primitive.local_max.x : primitive.local_min.x,
-                    corner & 2 ? primitive.local_max.y : primitive.local_min.y,
-                    corner & 4 ? primitive.local_max.z : primitive.local_min.z,
-                };
-                const glm::vec3 point = glm::vec3(world * glm::vec4(local, 1.0f));
-
-                scene.bounds_min = glm::min(scene.bounds_min, point);
-                scene.bounds_max = glm::max(scene.bounds_max, point);
+        // Colors are stored sRGB-encoded; everything else (normals, roughness, ...) is plain data. Base color and emissive textures hold colors.
+        for (const tinygltf::Material &source : model.materials) {
+            for (const int texture : {source.pbrMetallicRoughness.baseColorTexture.index, source.emissiveTexture.index}) {
+                if (const std::int32_t image = texture_image(model, texture); image >= 0) {
+                    scene.images.at(static_cast<std::size_t>(image)).srgb = true;
+                }
             }
         }
     }
 
-    for (const int child : node.children) {
-        visit_node(model, child, world, mesh_primitives, scene);
+    // Images
+
+    // tinygltf finds every image's bytes, whether in its own file, in a data URI, or inside a .glb, and hands them to this callback. We keep the encoded bytes (PNG, JPEG, ...) as they are; Chapter 5 decodes them.
+    bool keep_encoded_image(
+        tinygltf::Image *image, int, std::string*, std::string*,
+        int, int, const unsigned char *bytes, int size, void*
+    ) {
+        image->image.assign(bytes, bytes + size);
+        image->as_is = true;
+        return true;
     }
-}
-
-// --- Materials and images ----------------------------------------------------
-
-// The image a texture reference points at: material -> texture -> image.
-// -1 if there's no texture, or the texture's image is in a form we don't
-// read (KHR_texture_basisu puts it in an extension instead of `source`).
-std::int32_t texture_image(const tinygltf::Model &model, int texture_index) {
-    if (texture_index < 0) {
-        return -1;
-    }
-
-    const int image = model.textures.at(texture_index).source;
-
-    if (image >= static_cast<int>(model.images.size())) {
-        throw std::runtime_error("texture " + std::to_string(texture_index) + " points past the last image");
-    }
-
-    return image;
-}
-
-void add_materials_and_images(tinygltf::Model &model, Scene &scene) {
-    for (const tinygltf::Material &source : model.materials) {
-        const auto &pbr = source.pbrMetallicRoughness;
-
-        scene.materials.push_back(SceneMaterial{
-            .base_color_factor = glm::vec4(glm::make_vec4(pbr.baseColorFactor.data())),
-            .base_color_image = texture_image(model, pbr.baseColorTexture.index),
-        });
-    }
-
-    // For primitives that don't name a material, glTF's default: plain white.
-    scene.materials.push_back(SceneMaterial{});
-
-    // The image bytes move out of tinygltf's model; it's discarded afterwards.
-    for (tinygltf::Image &image : model.images) {
-        scene.images.push_back(SceneImage{
-            .encoded = std::move(image.image),
-            .name = image.uri.empty() ? image.name : image.uri,
-        });
-    }
-
-    // Colors are stored sRGB-encoded; everything else (normals, roughness, ...)
-    // is plain data. Base color and emissive textures hold colors.
-    for (const tinygltf::Material &source : model.materials) {
-        for (const int texture : {source.pbrMetallicRoughness.baseColorTexture.index, source.emissiveTexture.index}) {
-            if (const std::int32_t image = texture_image(model, texture); image >= 0) {
-                scene.images.at(static_cast<std::size_t>(image)).srgb = true;
-            }
-        }
-    }
-}
-
-// --- Images ------------------------------------------------------------------
-
-// tinygltf finds every image's bytes, whether in its own file, in a data URI,
-// or inside a .glb, and hands them to this callback. We keep the encoded bytes
-// (PNG, JPEG, ...) as they are; Chapter 5 decodes them.
-bool keep_encoded_image(
-    tinygltf::Image *image, int /*image_index*/, std::string* /*error*/, std::string* /*warning*/,
-    int /*required_width*/, int /*required_height*/, const unsigned char *bytes, int size, void* /*user_data*/
-) {
-    image->image.assign(bytes, bytes + size);
-    image->as_is = true;
-    return true;
-}
 
 }  // namespace
 
-// --- Loading -----------------------------------------------------------------
+// Loading
 
 Scene load_gltf(const std::filesystem::path &path) {
     tinygltf::Model model;
@@ -678,8 +647,7 @@ Scene load_gltf(const std::filesystem::path &path) {
 
     loader.SetImageLoader(keep_encoded_image, nullptr);
 
-    // .glb packs the JSON and binary data in one file; .gltf is JSON that
-    // refers to .bin and image files, or embeds them as base64 data URIs.
+    // .glb packs the JSON and binary data in one file; .gltf is JSON that refers to .bin and image files, or embeds them as base64 data URIs.
     const bool binary = path.extension() == ".glb";
     const bool loaded = binary
         ? loader.LoadBinaryFromFile(&model, &error, &warning, path.string())
@@ -693,10 +661,7 @@ Scene load_gltf(const std::filesystem::path &path) {
         throw std::runtime_error("can't load " + path.string() + ": " + error);
     }
 
-    // A file lists the extensions it can't be read without. Compressed
-    // geometry needs a decoder library we don't include, so refuse it clearly
-    // instead of reading compressed bytes as vertices. The others change how
-    // things look, not where the geometry is, and later chapters handle them.
+    // A file lists the extensions it can't be read without. Compressed geometry needs a decoder library we don't include, so refuse it clearly instead of reading compressed bytes as vertices. The others change how things look, not where the geometry is, and later chapters handle them.
     for (const std::string &extension : model.extensionsRequired) {
         if (extension == "KHR_draco_mesh_compression" || extension == "KHR_meshopt_compression"
             || extension == "EXT_meshopt_compression") {
@@ -708,8 +673,7 @@ Scene load_gltf(const std::filesystem::path &path) {
     add_materials_and_images(model, scene);
     const auto default_material = static_cast<std::uint32_t>(scene.materials.size() - 1);
 
-    // Every primitive of every mesh, once. mesh_primitives[m] lists where
-    // mesh m's drawable primitives landed in scene.primitives.
+    // Every primitive of every mesh, once. mesh_primitives[m] lists where mesh m's drawable primitives landed in scene.primitives.
     std::vector<std::vector<LoadedPrimitive>> mesh_primitives(model.meshes.size());
 
     for (std::size_t m = 0; m < model.meshes.size(); ++m) {
@@ -782,7 +746,7 @@ Textures also need **mipmaps**: copies at half, quarter, … size down to 1×1. 
 #include <string>
 #include <vector>
 
-// --- Decoding ----------------------------------------------------------------
+// Decoding
 
 // Pixels decoded from a PNG or JPEG: 8-bit RGBA, row by row, top to bottom.
 struct DecodedImage {
@@ -792,16 +756,12 @@ struct DecodedImage {
     std::string error{};  // why decoding failed, if it did
 };
 
-// Decodes every image in `images`, several at once, one per CPU core. An
-// image that can't be decoded becomes a single magenta pixel, so it's easy
-// to spot on screen, and its `error` says why.
+// Decodes every image in `images`, several at once, one per CPU core. An image that can't be decoded becomes a single magenta pixel, so it's easy to spot on screen, and its `error` says why.
 std::vector<DecodedImage> decode_images(std::span<const SceneImage> images);
 
-// --- GPU textures ------------------------------------------------------------
+// GPU textures
 
-// A sampled image with a full mip chain, in device-local memory, ready for
-// shaders: its layout is eShaderReadOnlyOptimal. Members are destroyed
-// bottom-up, so the image goes before its memory.
+// A sampled image with a full mip chain, in device-local memory, ready for shaders: its layout is eShaderReadOnlyOptimal. Members are destroyed bottom-up, so the image goes before its memory.
 struct Texture {
     vk::raii::DeviceMemory memory = nullptr;
     vk::raii::Image handle = nullptr;
@@ -810,9 +770,7 @@ struct Texture {
     std::uint32_t mip_levels = 1;
 };
 
-// The textures for a scene: index 0 is a 1x1 white texture, for materials
-// without one, and scene image i is texture i + 1. All of them are uploaded
-// and given mipmaps in a single submission.
+// The textures for a scene: index 0 is a 1x1 white texture, for materials without one, and scene image i is texture i + 1. All of them are uploaded and given mipmaps in a single submission.
 std::vector<Texture> create_scene_textures(
     const vk::raii::Device &device,
     const GpuChoice &gpu,
@@ -844,227 +802,221 @@ std::vector<Texture> create_scene_textures(
 
 namespace {
 
-// --- Decoding ----------------------------------------------------------------
+    // Decoding
 
-// What a failed image becomes: one magenta pixel, impossible to miss.
-DecodedImage missing_image(std::string error) {
-    return DecodedImage{.width = 1, .height = 1, .rgba = {255, 0, 255, 255}, .error = std::move(error)};
-}
-
-DecodedImage decode_jpeg(std::span<const std::uint8_t> encoded) {
-    int width = 0;
-    int height = 0;
-    int components = 0;
-
-    // Asking for 4 components gives RGBA, with alpha 255. jpgd allocates the
-    // pixels with malloc, so free() releases them.
-    const std::unique_ptr<unsigned char, decltype(&std::free)> pixels(
-        jpgd::decompress_jpeg_image_from_memory(encoded.data(), static_cast<int>(encoded.size()), &width, &height, &components, 4),
-        &std::free
-    );
-
-    if (!pixels) {
-        return missing_image("not a JPEG jpgd can decode");
+    // What a failed image becomes: one magenta pixel, impossible to miss.
+    DecodedImage missing_image(std::string error) {
+        return DecodedImage{.width = 1, .height = 1, .rgba = {255, 0, 255, 255}, .error = std::move(error)};
     }
 
-    const std::size_t size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
+    DecodedImage decode_jpeg(std::span<const std::uint8_t> encoded) {
+        int width = 0;
+        int height = 0;
+        int components = 0;
 
-    return DecodedImage{
-        .width = static_cast<std::uint32_t>(width),
-        .height = static_cast<std::uint32_t>(height),
-        .rgba = std::vector<std::uint8_t>(pixels.get(), pixels.get() + size),
-    };
-}
+        // Asking for 4 components gives RGBA, with alpha 255. jpgd allocates the pixels with malloc, so free() releases them.
+        const std::unique_ptr<unsigned char, decltype(&std::free)> pixels(
+            jpgd::decompress_jpeg_image_from_memory(encoded.data(), static_cast<int>(encoded.size()), &width, &height, &components, 4),
+            &std::free
+        );
 
-DecodedImage decode_png(std::span<const std::uint8_t> encoded) {
-    const std::unique_ptr<spng_ctx, decltype(&spng_ctx_free)> context(spng_ctx_new(0), &spng_ctx_free);
+        if (!pixels) {
+            return missing_image("not a JPEG jpgd can decode");
+        }
 
-    spng_ihdr header{};
-    std::size_t size = 0;
+        const std::size_t size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
 
-    // SPNG_FMT_RGBA8 converts any PNG (grey, palette, 16-bit, ...) to 8-bit
-    // RGBA; SPNG_DECODE_TRNS turns a transparency chunk into real alpha.
-    const bool decoded = context
-        && spng_set_png_buffer(context.get(), encoded.data(), encoded.size()) == 0
-        && spng_get_ihdr(context.get(), &header) == 0
-        && spng_decoded_image_size(context.get(), SPNG_FMT_RGBA8, &size) == 0;
-
-    if (!decoded) {
-        return missing_image("not a PNG libspng can read");
+        return DecodedImage{
+            .width = static_cast<std::uint32_t>(width),
+            .height = static_cast<std::uint32_t>(height),
+            .rgba = std::vector<std::uint8_t>(pixels.get(), pixels.get() + size),
+        };
     }
 
-    DecodedImage image{.width = header.width, .height = header.height, .rgba = std::vector<std::uint8_t>(size)};
+    DecodedImage decode_png(std::span<const std::uint8_t> encoded) {
+        const std::unique_ptr<spng_ctx, decltype(&spng_ctx_free)> context(spng_ctx_new(0), &spng_ctx_free);
 
-    if (spng_decode_image(context.get(), image.rgba.data(), size, SPNG_FMT_RGBA8, SPNG_DECODE_TRNS) != 0) {
-        return missing_image("libspng failed to decode it");
+        spng_ihdr header{};
+        std::size_t size = 0;
+
+        // SPNG_FMT_RGBA8 converts any PNG (grey, palette, 16-bit, ...) to 8-bit RGBA; SPNG_DECODE_TRNS turns a transparency chunk into real alpha.
+        const bool decoded = context
+            && spng_set_png_buffer(context.get(), encoded.data(), encoded.size()) == 0
+            && spng_get_ihdr(context.get(), &header) == 0
+            && spng_decoded_image_size(context.get(), SPNG_FMT_RGBA8, &size) == 0;
+
+        if (!decoded) {
+            return missing_image("not a PNG libspng can read");
+        }
+
+        DecodedImage image{.width = header.width, .height = header.height, .rgba = std::vector<std::uint8_t>(size)};
+
+        if (spng_decode_image(context.get(), image.rgba.data(), size, SPNG_FMT_RGBA8, SPNG_DECODE_TRNS) != 0) {
+            return missing_image("libspng failed to decode it");
+        }
+
+        return image;
     }
 
-    return image;
-}
+    // Chooses the decoder from the file's first bytes, its "magic number", which is more reliable than the file name or the glTF mimeType.
+    DecodedImage decode_image(std::span<const std::uint8_t> encoded) {
+        constexpr std::uint8_t png[] = {0x89, 'P', 'N', 'G'};
+        constexpr std::uint8_t jpeg[] = {0xFF, 0xD8, 0xFF};
 
-// Chooses the decoder from the file's first bytes, its "magic number", which
-// is more reliable than the file name or the glTF mimeType.
-DecodedImage decode_image(std::span<const std::uint8_t> encoded) {
-    constexpr std::uint8_t png[] = {0x89, 'P', 'N', 'G'};
-    constexpr std::uint8_t jpeg[] = {0xFF, 0xD8, 0xFF};
+        if (encoded.size() >= 4 && std::equal(std::begin(png), std::end(png), encoded.begin())) {
+            return decode_png(encoded);
+        }
 
-    if (encoded.size() >= 4 && std::equal(std::begin(png), std::end(png), encoded.begin())) {
-        return decode_png(encoded);
+        if (encoded.size() >= 3 && std::equal(std::begin(jpeg), std::end(jpeg), encoded.begin())) {
+            return decode_jpeg(encoded);
+        }
+
+        return missing_image(encoded.empty() ? "no image data" : "not a PNG or JPEG");
     }
 
-    if (encoded.size() >= 3 && std::equal(std::begin(jpeg), std::end(jpeg), encoded.begin())) {
-        return decode_jpeg(encoded);
-    }
+    // Uploading
 
-    return missing_image(encoded.empty() ? "no image data" : "not a PNG or JPEG");
-}
-
-// --- Uploading ---------------------------------------------------------------
-
-// Moves mip levels [base, base + count) of `image` between layouts.
-void transition_mips(
-    const vk::raii::CommandBuffer &commands,
-    vk::Image image,
-    std::uint32_t base,
-    std::uint32_t count,
-    vk::ImageLayout from,
-    vk::ImageLayout to,
-    vk::PipelineStageFlags2 src_stage,
-    vk::AccessFlags2 src_access,
-    vk::PipelineStageFlags2 dst_stage,
-    vk::AccessFlags2 dst_access
-) {
-    const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-        .oldLayout = from,
-        .newLayout = to,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = image,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = base,
-            .levelCount = count,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-    };
-
-    commands.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
-}
-
-// Records: staging bytes -> mip 0 -> each smaller mip blitted from the one
-// above it -> every level ready for shaders to sample.
-void record_upload(const vk::raii::CommandBuffer &commands, const Texture &texture, vk::Buffer staging, vk::DeviceSize offset) {
-    const vk::Image image = *texture.handle;
-
-    transition_mips(commands, image, 0, texture.mip_levels,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
-        vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone,
-        vk::PipelineStageFlagBits2::eCopy, vk::AccessFlagBits2::eTransferWrite);
-
-    commands.copyBufferToImage(staging, image, vk::ImageLayout::eTransferDstOptimal, vk::BufferImageCopy{
-        .bufferOffset = offset,
-        .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
-        .imageExtent = {texture.extent.width, texture.extent.height, 1},
-    });
-
-    // Each level is half the size of the one above, down to 1x1. A linear
-    // blit averages each 2x2 block of the larger level into one texel.
-    std::int32_t width = static_cast<std::int32_t>(texture.extent.width);
-    std::int32_t height = static_cast<std::int32_t>(texture.extent.height);
-
-    for (std::uint32_t level = 1; level < texture.mip_levels; ++level) {
-        // The level above was just written; make it the blit's source.
-        transition_mips(commands, image, level - 1, 1,
-            vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
-            vk::PipelineStageFlagBits2::eCopy | vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite,
-            vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferRead);
-
-        const std::int32_t next_width = std::max(width / 2, 1);
-        const std::int32_t next_height = std::max(height / 2, 1);
-
-        const vk::ImageBlit2 region{
-            .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = level - 1, .baseArrayLayer = 0, .layerCount = 1},
-            .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{width, height, 1}},
-            .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = level, .baseArrayLayer = 0, .layerCount = 1},
-            .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{next_width, next_height, 1}},
+    // Moves mip levels [base, base + count) of `image` between layouts.
+    void transition_mips(
+        const vk::raii::CommandBuffer &commands,
+        vk::Image image,
+        std::uint32_t base,
+        std::uint32_t count,
+        vk::ImageLayout from,
+        vk::ImageLayout to,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access
+    ) {
+        const vk::ImageMemoryBarrier2 barrier{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = image,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = base,
+                .levelCount = count,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
         };
 
-        commands.blitImage2(vk::BlitImageInfo2{
-            .srcImage = image,
-            .srcImageLayout = vk::ImageLayout::eTransferSrcOptimal,
-            .dstImage = image,
-            .dstImageLayout = vk::ImageLayout::eTransferDstOptimal,
-            .regionCount = 1,
-            .pRegions = &region,
-            .filter = vk::Filter::eLinear,
-        });
-
-        width = next_width;
-        height = next_height;
+        commands.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
     }
 
-    // Every level but the last was a blit source; the last was only written.
-    if (texture.mip_levels > 1) {
-        transition_mips(commands, image, 0, texture.mip_levels - 1,
-            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferRead,
+    // Records: staging bytes -> mip 0 -> each smaller mip blitted from the one above it -> every level ready for shaders to sample.
+    void record_upload(const vk::raii::CommandBuffer &commands, const Texture &texture, vk::Buffer staging, vk::DeviceSize offset) {
+        const vk::Image image = *texture.handle;
+
+        transition_mips(commands, image, 0, texture.mip_levels,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone,
+            vk::PipelineStageFlagBits2::eCopy, vk::AccessFlagBits2::eTransferWrite);
+
+        commands.copyBufferToImage(staging, image, vk::ImageLayout::eTransferDstOptimal, vk::BufferImageCopy{
+            .bufferOffset = offset,
+            .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+            .imageExtent = {texture.extent.width, texture.extent.height, 1},
+        });
+
+        // Each level is half the size of the one above, down to 1x1. A linear blit averages each 2x2 block of the larger level into one texel.
+        std::int32_t width = static_cast<std::int32_t>(texture.extent.width);
+        std::int32_t height = static_cast<std::int32_t>(texture.extent.height);
+
+        for (std::uint32_t level = 1; level < texture.mip_levels; ++level) {
+            // The level above was just written; make it the blit's source.
+            transition_mips(commands, image, level - 1, 1,
+                vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
+                vk::PipelineStageFlagBits2::eCopy | vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite,
+                vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferRead);
+
+            const std::int32_t next_width = std::max(width / 2, 1);
+            const std::int32_t next_height = std::max(height / 2, 1);
+
+            const vk::ImageBlit2 region{
+                .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = level - 1, .baseArrayLayer = 0, .layerCount = 1},
+                .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{width, height, 1}},
+                .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = level, .baseArrayLayer = 0, .layerCount = 1},
+                .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{next_width, next_height, 1}},
+            };
+
+            commands.blitImage2(vk::BlitImageInfo2{
+                .srcImage = image,
+                .srcImageLayout = vk::ImageLayout::eTransferSrcOptimal,
+                .dstImage = image,
+                .dstImageLayout = vk::ImageLayout::eTransferDstOptimal,
+                .regionCount = 1,
+                .pRegions = &region,
+                .filter = vk::Filter::eLinear,
+            });
+
+            width = next_width;
+            height = next_height;
+        }
+
+        // Every level but the last was a blit source; the last was only written.
+        if (texture.mip_levels > 1) {
+            transition_mips(commands, image, 0, texture.mip_levels - 1,
+                vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferRead,
+                vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead);
+        }
+
+        transition_mips(commands, image, texture.mip_levels - 1, 1,
+            vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::PipelineStageFlagBits2::eCopy | vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite,
             vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead);
     }
 
-    transition_mips(commands, image, texture.mip_levels - 1, 1,
-        vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::PipelineStageFlagBits2::eCopy | vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead);
-}
+    // An image for `decoded` with room for every mip level, in device-local memory.
+    Texture create_texture(const vk::raii::Device &device, const GpuChoice &gpu, const DecodedImage &decoded, vk::Format format) {
+        Texture texture;
+        texture.format = format;
+        texture.extent = vk::Extent2D{.width = decoded.width, .height = decoded.height};
 
-// An image for `decoded` with room for every mip level, in device-local memory.
-Texture create_texture(const vk::raii::Device &device, const GpuChoice &gpu, const DecodedImage &decoded, vk::Format format) {
-    Texture texture;
-    texture.format = format;
-    texture.extent = vk::Extent2D{.width = decoded.width, .height = decoded.height};
+        // Halving until 1x1: a 1024x1024 image has 11 levels (1024, 512, ..., 1).
+        texture.mip_levels = std::bit_width(std::max(decoded.width, decoded.height));
 
-    // Halving until 1x1: a 1024x1024 image has 11 levels (1024, 512, ..., 1).
-    texture.mip_levels = std::bit_width(std::max(decoded.width, decoded.height));
+        texture.handle = vk::raii::Image(device, vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D,
+            .format = format,
+            .extent = {decoded.width, decoded.height, 1},
+            .mipLevels = texture.mip_levels,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            // Copied into (dst), blitted from (src) to make mips, then sampled.
+            .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled,
+            .sharingMode = vk::SharingMode::eExclusive,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        });
 
-    texture.handle = vk::raii::Image(device, vk::ImageCreateInfo{
-        .imageType = vk::ImageType::e2D,
-        .format = format,
-        .extent = {decoded.width, decoded.height, 1},
-        .mipLevels = texture.mip_levels,
-        .arrayLayers = 1,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        // Copied into (dst), blitted from (src) to make mips, then sampled.
-        .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined,
-    });
+        const vk::MemoryRequirements requirements = texture.handle.getMemoryRequirements();
 
-    const vk::MemoryRequirements requirements = texture.handle.getMemoryRequirements();
+        texture.memory = vk::raii::DeviceMemory(device, vk::MemoryAllocateInfo{
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = find_memory_type(gpu, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal),
+        });
 
-    texture.memory = vk::raii::DeviceMemory(device, vk::MemoryAllocateInfo{
-        .allocationSize = requirements.size,
-        .memoryTypeIndex = find_memory_type(gpu, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal),
-    });
-
-    texture.handle.bindMemory(*texture.memory, 0);
-    return texture;
-}
+        texture.handle.bindMemory(*texture.memory, 0);
+        return texture;
+    }
 
 }  // namespace
 
-// --- Decoding ----------------------------------------------------------------
+// Decoding
 
 std::vector<DecodedImage> decode_images(std::span<const SceneImage> images) {
     std::vector<DecodedImage> decoded(images.size());
 
-    // Each worker thread takes the next undecoded image until none are left.
-    // Images are independent, so the threads never touch the same one.
+    // Each worker thread takes the next undecoded image until none are left. Images are independent, so the threads never touch the same one.
     std::atomic<std::size_t> next{0};
     const unsigned workers = std::max(1u, std::thread::hardware_concurrency());
 
@@ -1089,7 +1041,7 @@ std::vector<DecodedImage> decode_images(std::span<const SceneImage> images) {
     return decoded;
 }
 
-// --- GPU textures ------------------------------------------------------------
+// GPU textures
 
 std::vector<Texture> create_scene_textures(
     const vk::raii::Device &device,
@@ -1106,8 +1058,7 @@ std::vector<Texture> create_scene_textures(
         images.push_back(std::move(image));
     }
 
-    // sRGB formats make the GPU decode colors to linear when sampling (and
-    // filter them correctly when blitting mips); data textures stay as they are.
+    // sRGB formats make the GPU decode colors to linear when sampling (and filter them correctly when blitting mips); data textures stay as they are.
     for (const SceneImage &image : scene.images) {
         formats.push_back(image.srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm);
     }
@@ -1189,9 +1140,7 @@ There are two heaps:
 
 #include <span>
 
-// The two descriptor heaps shaders read: a resource heap of image
-// descriptors and a sampler heap. Each is a plain buffer of descriptor bytes
-// that we write ourselves, ending in a range reserved for the driver.
+// The two descriptor heaps shaders read: a resource heap of image descriptors and a sampler heap. Each is a plain buffer of descriptor bytes that we write ourselves, ending in a range reserved for the driver.
 struct DescriptorHeaps {
     Buffer resources;
     vk::DeviceSize resource_reserved_offset = 0;
@@ -1202,9 +1151,7 @@ struct DescriptorHeaps {
     vk::DeviceSize sampler_reserved_size = 0;
 };
 
-// Writes one image descriptor per texture (texture i at index i of the
-// resource heap) and one sampler (index 0 of the sampler heap), and uploads
-// both heaps to device-local memory.
+// Writes one image descriptor per texture (texture i at index i of the resource heap) and one sampler (index 0 of the sampler heap), and uploads both heaps to device-local memory.
 DescriptorHeaps create_descriptor_heaps(
     const vk::raii::Device &device,
     const GpuChoice &gpu,
@@ -1228,33 +1175,32 @@ void bind_descriptor_heaps(const vk::raii::CommandBuffer &commands, const Descri
 
 namespace {
 
-vk::DeviceSize align_up(vk::DeviceSize value, vk::DeviceSize alignment) {
-    return (value + alignment - 1) / alignment * alignment;
-}
-
-// Uploads a heap's bytes and checks the GPU address lands where heaps must
-// start: a multiple of `alignment`.
-Buffer upload_heap(
-    const vk::raii::Device &device,
-    const GpuChoice &gpu,
-    const vk::raii::Queue &queue,
-    const vk::raii::CommandPool &pool,
-    std::span<const std::byte> bytes,
-    vk::DeviceSize alignment
-) {
-    Buffer heap = upload_buffer(device, gpu, queue, pool, bytes,
-        vk::BufferUsageFlagBits::eDescriptorHeapEXT | vk::BufferUsageFlagBits::eShaderDeviceAddress);
-
-    if (heap.address % alignment != 0) {
-        throw std::runtime_error("a descriptor heap's address isn't aligned to " + std::to_string(alignment) + " bytes");
+    vk::DeviceSize align_up(vk::DeviceSize value, vk::DeviceSize alignment) {
+        return (value + alignment - 1) / alignment * alignment;
     }
 
-    return heap;
-}
+    // Uploads a heap's bytes and checks the GPU address lands where heaps must start: a multiple of `alignment`.
+    Buffer upload_heap(
+        const vk::raii::Device &device,
+        const GpuChoice &gpu,
+        const vk::raii::Queue &queue,
+        const vk::raii::CommandPool &pool,
+        std::span<const std::byte> bytes,
+        vk::DeviceSize alignment
+    ) {
+        Buffer heap = upload_buffer(device, gpu, queue, pool, bytes,
+            vk::BufferUsageFlagBits::eDescriptorHeapEXT | vk::BufferUsageFlagBits::eShaderDeviceAddress);
+
+        if (heap.address % alignment != 0) {
+            throw std::runtime_error("a descriptor heap's address isn't aligned to " + std::to_string(alignment) + " bytes");
+        }
+
+        return heap;
+    }
 
 }  // namespace
 
-// --- Creating the heaps ------------------------------------------------------
+// Creating the heaps
 
 DescriptorHeaps create_descriptor_heaps(
     const vk::raii::Device &device,
@@ -1272,19 +1218,14 @@ DescriptorHeaps create_descriptor_heaps(
 
     DescriptorHeaps heaps;
 
-    // Resource heap. Descriptor i sits at i * imageDescriptorSize, which is
-    // where a shader's Texture2D.Handle(i) reads it. The driver's reserved
-    // range comes after the last descriptor.
+    // Resource heap. Descriptor i sits at i * imageDescriptorSize, which is where a shader's Texture2D.Handle(i) reads it. The driver's reserved range comes after the last descriptor.
     heaps.resource_reserved_offset = align_up(heap.imageDescriptorSize * textures.size(), heap.imageDescriptorAlignment);
     heaps.resource_reserved_size = heap.minResourceHeapReservedRange;
 
     std::vector<std::byte> resource_bytes(
         align_up(heaps.resource_reserved_offset + heaps.resource_reserved_size, heap.resourceHeapAlignment));
 
-    // A descriptor is written from a description of the image view, so no
-    // VkImageView object is needed. The descriptor info structs point at each
-    // other, so all of them must stay alive until the write; sizing the
-    // vectors up front means no pointer moves.
+    // A descriptor is written from a description of the image view, so no VkImageView object is needed. The descriptor info structs point at each other, so all of them must stay alive until the write; sizing the vectors up front means no pointer moves.
     std::vector<vk::ImageViewCreateInfo> views(textures.size());
     std::vector<vk::ImageDescriptorInfoEXT> images(textures.size());
     std::vector<vk::ResourceDescriptorInfoEXT> descriptors(textures.size());
@@ -1324,9 +1265,7 @@ DescriptorHeaps create_descriptor_heaps(
     device.writeResourceDescriptorsEXT(descriptors, destinations);
     heaps.resources = upload_heap(device, gpu, queue, pool, resource_bytes, heap.resourceHeapAlignment);
 
-    // Sampler heap: one sampler at index 0. Trilinear filtering blends between
-    // mip levels; anisotropic filtering keeps surfaces seen at a grazing angle,
-    // like floors, sharp; repeat wraps texture coordinates outside 0..1.
+    // Sampler heap: one sampler at index 0. Trilinear filtering blends between mip levels; anisotropic filtering keeps surfaces seen at a grazing angle, like floors, sharp; repeat wraps texture coordinates outside 0..1.
     heaps.sampler_reserved_offset = align_up(heap.samplerDescriptorSize, heap.samplerDescriptorAlignment);
     heaps.sampler_reserved_size = heap.minSamplerHeapReservedRange;
 
@@ -1353,7 +1292,7 @@ DescriptorHeaps create_descriptor_heaps(
     return heaps;
 }
 
-// --- Binding -----------------------------------------------------------------
+// Binding
 
 void bind_descriptor_heaps(const vk::raii::CommandBuffer &commands, const DescriptorHeaps &heaps) {
     commands.bindResourceHeapEXT(vk::BindHeapInfoEXT{
@@ -1384,14 +1323,11 @@ The fragment shader now looks up its material, reads the base color texture thro
 ### Code
 `game-engine/shaders/mesh.slang`:
 ```slang
-// Draws one glTF primitive: its vertices come from the scene's vertex buffer,
-// its place in the world from its DrawData, its color from its material's
-// base color texture in the descriptor heap, lit by a single light.
+// Draws one glTF primitive: its vertices come from the scene's vertex buffer, its place in the world from its DrawData, its color from its material's base color texture in the descriptor heap, lit by a single light.
 
-// --- Data shared with C++ (src/includes/shader_types.h) ----------------------
+// Data shared with C++ (src/includes/shader_types.h)
 
-// Data behind a pointer is laid out like C: no padding between members, so
-// this matches the C++ Vertex exactly (32 bytes).
+// Data behind a pointer is laid out like C: no padding between members, so this matches the C++ Vertex exactly (32 bytes).
 struct Vertex {
     float3 position;
     float3 normal;  // (0, 0, 0) when the file had no normals
@@ -1422,10 +1358,9 @@ struct PushData {
 [[vk::push_constant]]
 ConstantBuffer<PushData> push;
 
-// --- Stage interface ---------------------------------------------------------
+// Stage interface
 
-// What the vertex shader hands to the rasterizer. SV_Position is the
-// clip-space position; every other field is interpolated across the triangle.
+// What the vertex shader hands to the rasterizer. SV_Position is the clip-space position; every other field is interpolated across the triangle.
 struct VertexOutput {
     float4 position : SV_Position;
     float3 world_position : POSITION;
@@ -1433,11 +1368,9 @@ struct VertexOutput {
     float2 uv : TEXCOORD0;
 };
 
-// --- Vertex shader -----------------------------------------------------------
+// Vertex shader
 
-// SV_VulkanVertexID is Vulkan's own gl_VertexIndex, which includes the draw's
-// vertexOffset: each primitive's indices start at 0, and the draw adds where
-// that primitive's vertices begin in the shared buffer.
+// SV_VulkanVertexID is Vulkan's own gl_VertexIndex, which includes the draw's vertexOffset: each primitive's indices start at 0, and the draw adds where that primitive's vertices begin in the shared buffer.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     const Vertex vertex = push.vertices[vertex_id];
@@ -1453,7 +1386,7 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID) {
     return output;
 }
 
-// --- Fragment shader ---------------------------------------------------------
+// Fragment shader
 
 // Fixed light from above and to the side, until Chapter 7 brings real lighting.
 static const float3 light_direction = normalize(float3(0.4, 1.0, 0.3));
@@ -1463,20 +1396,14 @@ static const float3 light_direction = normalize(float3(0.4, 1.0, 0.3));
 float4 fragmentMain(VertexOutput input) : SV_Target {
     const Material material = push.materials[push.draws[push.draw_index].material];
 
-    // Descriptor heap access: a handle made from an index reads that
-    // descriptor from the bound heap. The texture's index comes from the
-    // material; there's a single sampler, at index 0 of the sampler heap.
+    // Descriptor heap access: a handle made from an index reads that descriptor from the bound heap. The texture's index comes from the material; there's a single sampler, at index 0 of the sampler heap.
     const Texture2D base_color_map = Texture2D.Handle(uint2(material.base_color_texture, 0));
     const SamplerState linear_repeat = SamplerState.Handle(uint2(0, 0));
 
-    // sRGB textures are decoded to linear by the sampler, so this is linear
-    // color, like the factor it's multiplied by.
+    // sRGB textures are decoded to linear by the sampler, so this is linear color, like the factor it's multiplied by.
     const float4 base_color = material.base_color_factor * base_color_map.Sample(linear_repeat, input.uv);
 
-    // Without normals in the file, glTF asks for flat shading. The triangle's
-    // own normal is the cross product of how the position changes across
-    // neighbouring pixels (ddx, ddy). Vulkan's screen Y points down, so
-    // cross(ddy, ddx) is the order that points toward the camera.
+    // Without normals in the file, glTF asks for flat shading. The triangle's own normal is the cross product of how the position changes across neighbouring pixels (ddx, ddy). Vulkan's screen Y points down, so cross(ddy, ddx) is the order that points toward the camera.
     float3 normal = input.normal;
 
     if (all(normal == 0.0)) {
@@ -1551,228 +1478,219 @@ In `game-engine/CMakeLists.txt`, replace the shader's `add_custom_command` and t
 
 namespace {
 
-// --- Frames in flight --------------------------------------------------------
+    // Frames in flight
 
-// How many frames the CPU may record ahead of the GPU.
-constexpr std::size_t frames_in_flight = 2;
+    // How many frames the CPU may record ahead of the GPU.
+    constexpr std::size_t frames_in_flight = 2;
 
-constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
+    constexpr std::uint64_t no_timeout = std::numeric_limits<std::uint64_t>::max();
 
-// What each in-flight frame needs for itself.
-struct Frame {
-    vk::raii::CommandBuffer commands = nullptr;
-    vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
-    vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
-};
-
-// --- Recording a frame -------------------------------------------------------
-
-// Moves `image` between layouts, and makes the `dst` work wait for the `src` work.
-// `aspect` is which part of the image: its color, or its depth.
-void transition(
-    const vk::raii::CommandBuffer &commands,
-    vk::Image image,
-    vk::ImageLayout from,
-    vk::ImageLayout to,
-    vk::PipelineStageFlags2 src_stage,
-    vk::AccessFlags2 src_access,
-    vk::PipelineStageFlags2 dst_stage,
-    vk::AccessFlags2 dst_access,
-    vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor
-) {
-    const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-        .oldLayout = from,
-        .newLayout = to,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = image,
-        .subresourceRange = {
-            .aspectMask = aspect,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+    // What each in-flight frame needs for itself.
+    struct Frame {
+        vk::raii::CommandBuffer commands = nullptr;
+        vk::raii::Semaphore image_acquired = nullptr;  // swapchain image is ready to draw into
+        vk::raii::Fence done = nullptr;                // GPU finished this frame's commands
     };
 
-    commands.pipelineBarrier2(vk::DependencyInfo{
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier,
-    });
-}
+    // Recording a frame
 
-// What to draw: every primitive draw in a scene, and the buffers they read.
-struct DrawList {
-    vk::Buffer index_buffer;
-    vk::DeviceAddress vertices = 0;
-    vk::DeviceAddress draws = 0;
-    vk::DeviceAddress materials = 0;
-    glm::mat4 view_projection{1.0f};
-    std::span<const Primitive> primitives;
-    std::span<const MeshDraw> mesh_draws;
-};
-
-// Records: swapchain image -> clear color and depth -> draw everything in
-// `draws` with `pipeline`, textures from `heaps` -> ready to present.
-void record_frame(
-    const vk::raii::CommandBuffer &commands,
-    const Swapchain &swapchain,
-    std::uint32_t image_index,
-    std::array<float, 4> color,
-    const vk::raii::Pipeline &pipeline,
-    const DescriptorHeaps &heaps,
-    const DrawList &draws
-) {
-    const vk::Image image = swapchain.images[image_index];
-
-    commands.reset();
-    commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-
-    // Undefined: we don't care what was in the image, we're about to clear it.
-    transition(commands, image,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-    );
-
-    // The depth buffer is shared by the frames in flight, so this also waits
-    // for the previous frame's depth tests before this frame clears it.
-    transition(commands, *swapchain.depth.handle,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eLateFragmentTests, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::ImageAspectFlagBits::eDepth
-    );
-
-    // loadOp eClear does the clearing when rendering begins.
-    const vk::RenderingAttachmentInfo color_attachment{
-        .imageView = *swapchain.views[image_index],
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
-    };
-
-    // Reverse-Z: 0 is the far plane. Depth is only needed while drawing this
-    // frame, so it isn't stored afterwards.
-    const vk::RenderingAttachmentInfo depth_attachment{
-        .imageView = *swapchain.depth.view,
-        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
-        .clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = 0.0f}},
-    };
-
-    commands.beginRendering(vk::RenderingInfo{
-        .renderArea = {.offset = {0, 0}, .extent = swapchain.extent},
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment,
-        .pDepthAttachment = &depth_attachment,
-    });
-
-    commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-
-    // Every texture and sampler the shaders read comes from these two heaps.
-    bind_descriptor_heaps(commands, heaps);
-
-    // The pipeline left these dynamic; they cover the whole image.
-    commands.setViewport(0, vk::Viewport{
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = static_cast<float>(swapchain.extent.width),
-        .height = static_cast<float>(swapchain.extent.height),
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    });
-    commands.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapchain.extent});
-
-    // One index buffer for the whole scene. Indices go through the GPU's
-    // fixed-function index fetch, which also lets it reuse vertices shared
-    // between neighbouring triangles.
-    commands.bindIndexBuffer(draws.index_buffer, 0, vk::IndexType::eUint32);
-
-    // One draw per primitive per node. Push data says which DrawData to use;
-    // the primitive's index range and vertex offset go to drawIndexed.
-    for (std::uint32_t i = 0; i < draws.mesh_draws.size(); ++i) {
-        const Primitive &primitive = draws.primitives[draws.mesh_draws[i].primitive];
-
-        const PushData push{
-            .view_projection = draws.view_projection,
-            .vertices = draws.vertices,
-            .draws = draws.draws,
-            .materials = draws.materials,
-            .draw_index = i,
+    // Moves `image` between layouts, and makes the `dst` work wait for the `src` work. `aspect` is which part of the image: its color, or its depth.
+    void transition(
+        const vk::raii::CommandBuffer &commands,
+        vk::Image image,
+        vk::ImageLayout from,
+        vk::ImageLayout to,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access,
+        vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor
+    ) {
+        const vk::ImageMemoryBarrier2 barrier{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = image,
+            .subresourceRange = {
+                .aspectMask = aspect,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
         };
 
-        commands.pushDataEXT(vk::PushDataInfoEXT{
-            .offset = 0,
-            .data = {.address = &push, .size = sizeof(push)},
+        commands.pipelineBarrier2(vk::DependencyInfo{
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &barrier,
+        });
+    }
+
+    // What to draw: every primitive draw in a scene, and the buffers they read.
+    struct DrawList {
+        vk::Buffer index_buffer;
+        vk::DeviceAddress vertices = 0;
+        vk::DeviceAddress draws = 0;
+        vk::DeviceAddress materials = 0;
+        glm::mat4 view_projection{1.0f};
+        std::span<const Primitive> primitives;
+        std::span<const MeshDraw> mesh_draws;
+    };
+
+    // Records: swapchain image -> clear color and depth -> draw everything in `draws` with `pipeline`, textures from `heaps` -> ready to present.
+    void record_frame(
+        const vk::raii::CommandBuffer &commands,
+        const Swapchain &swapchain,
+        std::uint32_t image_index,
+        std::array<float, 4> color,
+        const vk::raii::Pipeline &pipeline,
+        const DescriptorHeaps &heaps,
+        const DrawList &draws
+    ) {
+        const vk::Image image = swapchain.images[image_index];
+
+        commands.reset();
+        commands.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
+        // Undefined: we don't care what was in the image, we're about to clear it.
+        transition(commands, image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eNone,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
+        );
+
+        // The depth buffer is shared by the frames in flight, so this also waits for the previous frame's depth tests before this frame clears it.
+        transition(commands, *swapchain.depth.handle,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eLateFragmentTests, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::ImageAspectFlagBits::eDepth
+        );
+
+        // loadOp eClear does the clearing when rendering begins.
+        const vk::RenderingAttachmentInfo color_attachment{
+            .imageView = *swapchain.views[image_index],
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = color}},
+        };
+
+        // Reverse-Z: 0 is the far plane. Depth is only needed while drawing this frame, so it isn't stored afterwards.
+        const vk::RenderingAttachmentInfo depth_attachment{
+            .imageView = *swapchain.depth.view,
+            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eDontCare,
+            .clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = 0.0f}},
+        };
+
+        commands.beginRendering(vk::RenderingInfo{
+            .renderArea = {.offset = {0, 0}, .extent = swapchain.extent},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &color_attachment,
+            .pDepthAttachment = &depth_attachment,
         });
 
-        commands.drawIndexed(primitive.index_count, 1, primitive.first_index, primitive.vertex_offset, 0);
-    }
+        commands.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
-    commands.endRendering();
+        // Every texture and sampler the shaders read comes from these two heaps.
+        bind_descriptor_heaps(commands, heaps);
 
-    transition(commands, image,
-        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
-    );
+        // The pipeline left these dynamic; they cover the whole image.
+        commands.setViewport(0, vk::Viewport{
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = static_cast<float>(swapchain.extent.width),
+            .height = static_cast<float>(swapchain.extent.height),
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f,
+        });
+        commands.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapchain.extent});
 
-    commands.end();
-}
+        // One index buffer for the whole scene. Indices go through the GPU's fixed-function index fetch, which also lets it reuse vertices shared between neighbouring triangles.
+        commands.bindIndexBuffer(draws.index_buffer, 0, vk::IndexType::eUint32);
 
-// --- Events ------------------------------------------------------------------
+        // One draw per primitive per node. Push data says which DrawData to use; the primitive's index range and vertex offset go to drawIndexed.
+        for (std::uint32_t i = 0; i < draws.mesh_draws.size(); ++i) {
+            const Primitive &primitive = draws.primitives[draws.mesh_draws[i].primitive];
 
-// Handles every pending event and fills in `input` for this frame. False once
-// the window was closed or Escape pressed.
-bool poll_events(SDL_Window *window, CameraInput &input) {
-    input = CameraInput{};
-    SDL_Event event;
+            const PushData push{
+                .view_projection = draws.view_projection,
+                .vertices = draws.vertices,
+                .draws = draws.draws,
+                .materials = draws.materials,
+                .draw_index = i,
+            };
 
-    while (SDL_PollEvent(&event)) {
-        const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
+            commands.pushDataEXT(vk::PushDataInfoEXT{
+                .offset = 0,
+                .data = {.address = &push, .size = sizeof(push)},
+            });
 
-        if (event.type == SDL_EVENT_QUIT || escape) {
-            return false;
+            commands.drawIndexed(primitive.index_count, 1, primitive.first_index, primitive.vertex_offset, 0);
         }
 
-        if (event.type == SDL_EVENT_MOUSE_MOTION) {
-            input.mouse_delta += glm::vec2{event.motion.xrel, event.motion.yrel};
-        } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-            input.wheel += event.wheel.y;
+        commands.endRendering();
+
+        transition(commands, image,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eNone, vk::AccessFlagBits2::eNone
+        );
+
+        commands.end();
+    }
+
+    // Events
+
+    // Handles every pending event and fills in `input` for this frame. False once the window was closed or Escape pressed.
+    bool poll_events(SDL_Window *window, CameraInput &input) {
+        input = CameraInput{};
+        SDL_Event event;
+
+        while (SDL_PollEvent(&event)) {
+            const bool escape = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE;
+
+            if (event.type == SDL_EVENT_QUIT || escape) {
+                return false;
+            }
+
+            if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                input.mouse_delta += glm::vec2{event.motion.xrel, event.motion.yrel};
+            } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                input.wheel += event.wheel.y;
+            }
         }
+
+        // Which buttons are held right now.
+        const SDL_MouseButtonFlags buttons = SDL_GetMouseState(nullptr, nullptr);
+        input.right_button = (buttons & SDL_BUTTON_RMASK) != 0;
+        input.left_button = (buttons & SDL_BUTTON_LMASK) != 0;
+        input.middle_button = (buttons & SDL_BUTTON_MMASK) != 0;
+
+        // While a button is held, relative mode hides the cursor and keeps reporting movement, so a drag can't run into the edge of the screen.
+        const bool dragging = input.right_button || input.left_button || input.middle_button;
+
+        if (dragging != SDL_GetWindowRelativeMouseMode(window)) {
+            SDL_SetWindowRelativeMouseMode(window, dragging);
+        }
+
+        return true;
     }
-
-    // Which buttons are held right now.
-    const SDL_MouseButtonFlags buttons = SDL_GetMouseState(nullptr, nullptr);
-    input.right_button = (buttons & SDL_BUTTON_RMASK) != 0;
-    input.left_button = (buttons & SDL_BUTTON_LMASK) != 0;
-    input.middle_button = (buttons & SDL_BUTTON_MMASK) != 0;
-
-    // While a button is held, relative mode hides the cursor and keeps
-    // reporting movement, so a drag can't run into the edge of the screen.
-    const bool dragging = input.right_button || input.left_button || input.middle_button;
-
-    if (dragging != SDL_GetWindowRelativeMouseMode(window)) {
-        SDL_SetWindowRelativeMouseMode(window, dragging);
-    }
-
-    return true;
-}
 
 }  // namespace
 
 int main() {
     try {
-        // --- Window and instance ---------------------------------------------
+        // Window and instance
 
         SdlContext sdl;
         const int version = SDL_GetVersion();
@@ -1789,9 +1707,7 @@ int main() {
 #endif
         std::println("Validation layer {}", validation ? "on" : "off");
 
-        // Declaration order matters: each object is destroyed before the ones above it.
-        // The window comes first: creating it loads Vulkan into SDL, which
-        // required_vulkan_extensions() needs.
+        // Declaration order matters: each object is destroyed before the ones above it. The window comes first: creating it loads Vulkan into SDL, which required_vulkan_extensions() needs.
         Window window = make_vulkan_window(1920, 1080, "game-engine", true);
 
         vk::raii::Instance instance = create_instance(context, SdlContext::required_vulkan_extensions(), validation);
@@ -1801,7 +1717,7 @@ int main() {
 
         vk::raii::SurfaceKHR surface = create_surface(instance, window.get());
 
-        // --- GPU, device and swapchain ---------------------------------------
+        // GPU, device and swapchain
 
         std::println("GPUs:");
         std::optional<GpuChoice> gpu = pick_gpu(instance, surface);
@@ -1818,13 +1734,12 @@ int main() {
         vk::raii::Queue queue = device.getQueue(gpu->queue_family, 0);
         Swapchain swapchain = create_swapchain(device, *gpu, surface, window.get());
 
-        // --- Pipelines -------------------------------------------------------
+        // Pipelines
 
-        // Built for swapchain.format and depth_format. recreate_swapchain() picks
-        // the same formats again, so the pipeline stays valid across resizes.
+        // Built for swapchain.format and depth_format. recreate_swapchain() picks the same formats again, so the pipeline stays valid across resizes.
         vk::raii::Pipeline pipeline = create_mesh_pipeline(device, swapchain.format, depth_format);
 
-        // --- Per-frame resources ---------------------------------------------
+        // Per-frame resources
 
         // eResetCommandBuffer lets us re-record each frame's command buffer.
         vk::raii::CommandPool command_pool(device, vk::CommandPoolCreateInfo{
@@ -1848,7 +1763,7 @@ int main() {
             });
         }
 
-        // --- Scene -----------------------------------------------------------
+        // Scene
 
         // The glTF file to draw, under lecture-md/game-engine/assets.
         const std::filesystem::path scene_file = std::filesystem::path(ASSET_DIR) / "Sponza/Sponza.gltf";
@@ -1859,9 +1774,7 @@ int main() {
             scene_file.filename().string(), scene.vertices.size(), scene.indices.size() / 3,
             scene.primitives.size(), scene.draws.size(), scene.materials.size(), scene.images.size());
 
-        // Each draw's matrices. The normal matrix is the transposed inverse of
-        // the model matrix: under non-uniform scale, transforming a normal by
-        // the model matrix itself would tilt it off the surface.
+        // Each draw's matrices. The normal matrix is the transposed inverse of the model matrix: under non-uniform scale, transforming a normal by the model matrix itself would tilt it off the surface.
         std::vector<DrawData> draw_data;
 
         for (const MeshDraw &draw : scene.draws) {
@@ -1872,8 +1785,7 @@ int main() {
             });
         }
 
-        // Vertices and draw data are read through pointers; indices go to the
-        // GPU's index fetch, so that buffer is an index buffer.
+        // Vertices and draw data are read through pointers; indices go to the GPU's index fetch, so that buffer is an index buffer.
         const Buffer vertex_buffer = upload_buffer(device, *gpu, queue, command_pool,
             std::as_bytes(std::span(scene.vertices)), vk::BufferUsageFlagBits::eShaderDeviceAddress);
         const Buffer index_buffer = upload_buffer(device, *gpu, queue, command_pool,
@@ -1881,10 +1793,9 @@ int main() {
         const Buffer draw_buffer = upload_buffer(device, *gpu, queue, command_pool,
             std::as_bytes(std::span(draw_data)), vk::BufferUsageFlagBits::eShaderDeviceAddress);
 
-        // --- Textures and materials ------------------------------------------
+        // Textures and materials
 
-        // Decode every image, upload them with mipmaps, and describe them in
-        // the descriptor heap. Texture 0 is white; scene image i is texture i + 1.
+        // Decode every image, upload them with mipmaps, and describe them in the descriptor heap. Texture 0 is white; scene image i is texture i + 1.
         const std::uint64_t texture_start = SDL_GetTicksNS();
         const std::vector<Texture> textures = create_scene_textures(device, *gpu, queue, command_pool, scene);
         const DescriptorHeaps heaps = create_descriptor_heaps(device, *gpu, queue, command_pool, textures);
@@ -1911,7 +1822,7 @@ int main() {
 
         std::uint64_t previous_ticks = SDL_GetTicksNS();
 
-        // --- Frame loop ------------------------------------------------------
+        // Frame loop
 
         const std::array black{0.0f, 0.0f, 0.0f, 1.0f};
         std::uint64_t frame_count = 0;
@@ -1931,7 +1842,7 @@ int main() {
                 recreate_swapchain(swapchain, device, *gpu, surface, window.get());
             }
 
-            // --- Update -----------------------------------------------------
+            // Update
 
             // Seconds since the last frame, so movement doesn't depend on frame rate.
             const std::uint64_t ticks = SDL_GetTicksNS();
@@ -1952,7 +1863,7 @@ int main() {
                 .mesh_draws = scene.draws,
             };
 
-            // --- Render -----------------------------------------------------
+            // Render
 
             Frame &frame = frames[frame_count % frames_in_flight];
 
@@ -2011,7 +1922,7 @@ int main() {
             ++frame_count;
         }
 
-        // --- Shutdown --------------------------------------------------------
+        // Shutdown
 
         // Everything above is destroyed on the way out of this scope; the GPU must be idle first.
         device.waitIdle();

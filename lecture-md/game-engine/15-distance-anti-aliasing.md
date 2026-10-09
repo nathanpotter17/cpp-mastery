@@ -46,17 +46,14 @@ A blit averages a 2 × 2 block of texels, with no idea what they hold. Averaging
 ### Code
 `game-engine/shaders/mips.slang`:
 ```slang
-// Mip chains for the scene's textures, in compute shaders. Every level of
-// every texture lives in one buffer, as 8-bit RGBA texels packed in a uint,
-// level after level; texture.cpp copies the finished levels into the images.
+// Mip chains for the scene's textures, in compute shaders. Every level of every texture lives in one buffer, as 8-bit RGBA texels packed in a uint, level after level; texture.cpp copies the finished levels into the images.
 //   prepareNormalsMain  a normal map's top level: no spread, in alpha
 //   downsampleMain      each smaller level, from the one above it
 //   histogramMain       a level's alpha values, counted in 256 bins
-//   coverageMain        per level of a masked texture: the alpha scale that
-//                       keeps as many texels above the cutoff as the top level
+//   coverageMain        per level of a masked texture: the alpha scale that keeps as many texels above the cutoff as the top level
 //   scaleAlphaMain      a level's alpha, times that scale
 
-// --- Data shared with C++ (src/includes/shader_types.h) ----------------------
+// Data shared with C++ (src/includes/shader_types.h)
 
 struct MipPushData {
     uint *source;         // texels read: the level above, or the level itself
@@ -77,7 +74,7 @@ static const uint mip_see_through = 2;  // sRGB colors with coverage or opacity 
                                         // as linear light, weighted by alpha
 static const uint mip_normal = 3;       // normals: averaged as vectors
 
-// --- Texels --------------------------------------------------------------------
+// Texels
 
 float4 unpack(uint texel) {
     return float4(texel & 0xFF, (texel >> 8) & 0xFF, (texel >> 16) & 0xFF, texel >> 24) / 255.0;
@@ -88,9 +85,7 @@ uint pack(float4 value) {
     return bytes.x | (bytes.y << 8) | (bytes.z << 16) | (bytes.w << 24);
 }
 
-// The sRGB transfer function, both ways, as the Khronos Data Format
-// Specification defines it for Vulkan's _SRGB formats: what the sampler does
-// when it reads one.
+// The sRGB transfer function, both ways, as the Khronos Data Format Specification defines it for Vulkan's _SRGB formats: what the sampler does when it reads one.
 float3 srgb_to_linear(float3 c) {
     return select(c <= 0.04045, c / 12.92, pow((c + 0.055) / 1.055, 2.4));
 }
@@ -99,20 +94,13 @@ float3 linear_to_srgb(float3 c) {
     return select(c <= 0.0031308, c * 12.92, 1.055 * pow(c, 1.0 / 2.4) - 0.055);
 }
 
-// --- Normals and their spread ---------------------------------------------------
+// Normals and their spread
 
-// Normals that spread around their average by an angle with standard
-// deviation s average to a vector about 1 / (1 + s^2) long (Toksvig 2005).
-// A normal map's alpha holds 1 - s: 1, as an 8-bit normal map's alpha
-// usually is, means no spread, and near no spread, where it matters most,
-// each 8-bit step is a tiny one.
+// Normals that spread around their average by an angle with standard deviation s average to a vector about 1 / (1 + s^2) long (Toksvig 2005). A normal map's alpha holds 1 - s: 1, as an 8-bit normal map's alpha usually is, means no spread, and near no spread, where it matters most, each 8-bit step is a tiny one.
 //
-// The direction is always renormalized as it's read: stored in 8 bits, a
-// unit normal is only roughly unit length, up to about 0.6% short or long,
-// and that rounding mustn't count as spread.
+// The direction is always renormalized as it's read: stored in 8 bits, a unit normal is only roughly unit length, up to about 0.6% short or long, and that rounding mustn't count as spread.
 
-// A texel as a vector: its direction, unit length, times the length its
-// spread gives.
+// A texel as a vector: its direction, unit length, times the length its spread gives.
 float3 unpack_normal(float4 texel) {
     const float3 normal = texel.xyz * 2.0 - 1.0;
     const float length_squared = dot(normal, normal);
@@ -121,8 +109,7 @@ float3 unpack_normal(float4 texel) {
     return direction / (1.0 + spread * spread);
 }
 
-// The average of such vectors, as a texel: its direction, and the spread its
-// length gives back, s^2 = (1 - length) / length.
+// The average of such vectors, as a texel: its direction, and the spread its length gives back, s^2 = (1 - length) / length.
 float4 pack_normal(float3 average) {
     const float length = sqrt(dot(average, average));
     const float3 direction = length > 0.0 ? average / length : float3(0.0, 0.0, 1.0);
@@ -130,8 +117,7 @@ float4 pack_normal(float3 average) {
     return float4(direction * 0.5 + 0.5, 1.0 - min(spread, 1.0));
 }
 
-// A normal map's top level has no spread of its own: alpha 1. glTF ignores a
-// normal map's alpha, so it's free to hold this.
+// A normal map's top level has no spread of its own: alpha 1. glTF ignores a normal map's alpha, so it's free to hold this.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void prepareNormalsMain(uint3 id : SV_DispatchThreadID) {
@@ -143,22 +129,16 @@ void prepareNormalsMain(uint3 id : SV_DispatchThreadID) {
     push.source[index] |= 0xFF000000;
 }
 
-// --- Downsampling ----------------------------------------------------------------
+// Downsampling
 
-// The share of source texel `i` (covering i..i+1) inside the footprint
-// start..end, along one axis.
+// The share of source texel `i` (covering i..i+1) inside the footprint start..end, along one axis.
 float overlap(float i, float start, float end) {
     return max(min(i + 1.0, end) - max(i, start), 0.0);
 }
 
-// One texel of the smaller level: the average of the source texels its area
-// covers, a box filter. With an even size, that's a 2 x 2 block; with an odd
-// one, the footprint is between 2 and 3 texels wide, and the texels it cuts
-// get their share. The averages are of what the texels stand for:
+// One texel of the smaller level: the average of the source texels its area covers, a box filter. With an even size, that's a 2 x 2 block; with an odd one, the footprint is between 2 and 3 texels wide, and the texels it cuts get their share. The averages are of what the texels stand for:
 //   colors       in linear light
-//   see-through  in linear light, weighted by alpha: a texel that's
-//                transparent has no color to contribute, so the cut-out
-//                parts of a leaf texture don't darken its edges
+//   see-through  in linear light, weighted by alpha: a texel that's transparent has no color to contribute, so the cut-out parts of a leaf texture don't darken its edges
 //   normals      as vectors, with the average's spread in alpha
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -216,14 +196,9 @@ void downsampleMain(uint3 id : SV_DispatchThreadID) {
     push.target[id.y * push.target_size.x + id.x] = pack(result);
 }
 
-// --- Alpha coverage (Castaño 2010) --------------------------------------------------
+// Alpha coverage (Castaño 2010)
 
-// A masked material cuts out every texel whose alpha is below its cutoff.
-// Averaging alpha, the levels below blur the edges of the shapes; once a
-// level's texels are mostly partly covered, fewer of them reach the cutoff,
-// and the shape thins out, until far away a tree is bare branches. Scaling
-// each level's alpha so that the same share of texels reaches the cutoff as
-// on the top level keeps the coverage, and the shape.
+// A masked material cuts out every texel whose alpha is below its cutoff. Averaging alpha, the levels below blur the edges of the shapes; once a level's texels are mostly partly covered, fewer of them reach the cutoff, and the shape thins out, until far away a tree is bare branches. Scaling each level's alpha so that the same share of texels reaches the cutoff as on the top level keeps the coverage, and the shape.
 
 // The 8-bit alpha of every texel of a level, counted into 256 bins.
 [shader("compute")]
@@ -236,15 +211,7 @@ void histogramMain(uint3 id : SV_DispatchThreadID) {
     InterlockedAdd(push.target[push.source[id.y * push.source_size.x + id.x] >> 24], 1);
 }
 
-// One thread per level below the top: the 8-bit alpha `a` whose share of
-// texels at or above it is closest to the top level's share at or above the
-// cutoff. The scale takes alpha a to a little above the cutoff, and a - 1 to
-// a little below: half of a scaled step. When coverage shrank down the
-// chain, the scale is above 1 and that's more than half an 8-bit step, so
-// rounding the scaled alpha keeps them on their sides. Below 1, several
-// alphas round to one 8-bit value, and the split is only close. The
-// histograms are level after level, 256 bins each; the scales follow them,
-// one float per level.
+// One thread per level below the top: the 8-bit alpha `a` whose share of texels at or above it is closest to the top level's share at or above the cutoff. The scale takes alpha a to a little above the cutoff, and a - 1 to a little below: half of a scaled step. When coverage shrank down the chain, the scale is above 1 and that's more than half an 8-bit step, so rounding the scaled alpha keeps them on their sides. Below 1, several alphas round to one 8-bit value, and the split is only close. The histograms are level after level, 256 bins each; the scales follow them, one float per level.
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void coverageMain(uint3 id : SV_DispatchThreadID) {
@@ -273,8 +240,7 @@ void coverageMain(uint3 id : SV_DispatchThreadID) {
 
     const float target = float(top_covered) / float(top_total);
 
-    // Going down from the most opaque bin, the share at or above it only
-    // grows; stop where it's closest to the target.
+    // Going down from the most opaque bin, the share at or above it only grows; stop where it's closest to the target.
     uint best = 255;
     float best_error = 2.0;
     uint above = 0;
@@ -329,19 +295,13 @@ Every step of `mips.slang` takes the same push data.
 #include <cstddef>
 #include <cstdint>
 
-// C++ mirrors of the structs in the shaders (shaders/*.slang).
-// The GPU reads these bytes as they are, so the two sides must agree on every
-// size and offset; the static_asserts catch a mismatch at compile time.
+// C++ mirrors of the structs in the shaders (shaders/*.slang). The GPU reads these bytes as they are, so the two sides must agree on every size and offset; the static_asserts catch a mismatch at compile time.
 
-// --- Vertex ------------------------------------------------------------------
+// Vertex
 
-// Slang lays out data behind a pointer like C: each member aligned only to
-// the size of its scalar type. Every member here is made of 4-byte floats,
-// so nothing needs padding, and glm agrees member for member. All of these
-// structs are packed tight like this: no padding anywhere.
+// Slang lays out data behind a pointer like C: each member aligned only to the size of its scalar type. Every member here is made of 4-byte floats, so nothing needs padding, and glm agrees member for member. All of these structs are packed tight like this: no padding anywhere.
 //   - A normal of (0, 0, 0) means the file had none (see mesh.slang).
-//   - A tangent of (0, 0, 0, 0) means the file had none; the shader then
-//     works the tangent out from the texture coordinates.
+//   - A tangent of (0, 0, 0, 0) means the file had none; the shader then works the tangent out from the texture coordinates.
 struct Vertex {
     glm::vec3 position;
     glm::vec3 normal;
@@ -357,13 +317,9 @@ static_assert(offsetof(Vertex, uv0) == 40);
 static_assert(offsetof(Vertex, uv1) == 48);
 static_assert(offsetof(Vertex, color) == 56);
 
-// --- Per-draw data -----------------------------------------------------------
+// Per-draw data
 
-// One per draw, in a GPU buffer the shaders index. A draw is placed in a
-// world cell (cells.h): its model matrix moves the primitive into the cell,
-// measured from the cell's corner. A shadow ray that hits a draw's triangle
-// finds the triangle's vertices through first_index and vertex_offset, as
-// drawIndexed does. The cull tests the draw's box.
+// One per draw, in a GPU buffer the shaders index. A draw is placed in a world cell (cells.h): its model matrix moves the primitive into the cell, measured from the cell's corner. A shadow ray that hits a draw's triangle finds the triangle's vertices through first_index and vertex_offset, as drawIndexed does. The cull tests the draw's box.
 struct DrawData {
     glm::mat4 model;            // this primitive's space -> its cell, from the cell's corner
     glm::mat4 normal_matrix;    // transposed inverse of model: keeps normals perpendicular under any scale
@@ -381,19 +337,16 @@ static_assert(offsetof(DrawData, material) == 128);
 static_assert(offsetof(DrawData, cell) == 140);
 static_assert(offsetof(DrawData, bounds_min) == 152);
 
-// --- Materials ---------------------------------------------------------------
+// Materials
 
-// glTF's three ways of using a material's alpha. Each gets its own pipeline,
-// and the shader reads the mode as a specialization constant.
+// glTF's three ways of using a material's alpha. Each gets its own pipeline, and the shader reads the mode as a specialization constant.
 enum class AlphaMode : std::uint32_t {
     opaque,  // alpha is ignored
     mask,    // fully opaque or fully transparent: cut out below alpha_cutoff
     blend,   // see-through: blended over what's behind it
 };
 
-// Which texture a material slot samples, with which sampler and which set of
-// texture coordinates. Heap indices: texture 0 is a 1x1 white texture and
-// sampler 0 the default sampler, for slots the file leaves empty.
+// Which texture a material slot samples, with which sampler and which set of texture coordinates. Heap indices: texture 0 is a 1x1 white texture and sampler 0 the default sampler, for slots the file leaves empty.
 struct TextureSlot {
     std::uint32_t texture = 0;  // resource heap index
     std::uint32_t sampler = 0;  // sampler heap index
@@ -402,8 +355,7 @@ struct TextureSlot {
 
 static_assert(sizeof(TextureSlot) == 12);
 
-// A glTF metallic-roughness material: every factor and texture of the core
-// spec. Each texture is multiplied by its factor; see mesh.slang for how.
+// A glTF metallic-roughness material: every factor and texture of the core spec. Each texture is multiplied by its factor; see mesh.slang for how.
 struct Material {
     glm::vec4 base_color_factor;     // linear RGBA
     glm::vec3 emissive_factor;       // linear RGB light the surface gives off
@@ -429,18 +381,16 @@ static_assert(offsetof(Material, alpha_mode) == 52);
 static_assert(offsetof(Material, base_color) == 56);
 static_assert(offsetof(Material, emissive) == 104);
 
-// --- Lights ------------------------------------------------------------------
+// Lights
 
-// KHR_lights_punctual's three kinds of light. "Punctual" means infinitely
-// small: all of a light's power comes from one point, or one direction.
+// KHR_lights_punctual's three kinds of light. "Punctual" means infinitely small: all of a light's power comes from one point, or one direction.
 enum class LightType : std::uint32_t {
     directional,  // like the sun: parallel rays, intensity in lux
     point,        // shines in every direction, intensity in candela
     spot,         // a point light limited to a cone, intensity in candela
 };
 
-// One light from the file, placed in a world cell (cells.h); its direction is
-// along the world's axes.
+// One light from the file, placed in a world cell (cells.h); its direction is along the world's axes.
 struct Light {
     glm::vec3 offset;     // point and spot lights: where in `cell` the light is (cells.h)
     float range;          // distance where the light fades to nothing; 0 for no limit
@@ -458,12 +408,9 @@ static_assert(offsetof(Light, intensity) == 32);
 static_assert(offsetof(Light, cell) == 48);
 static_assert(offsetof(Light, type) == 60);
 
-// --- Views -------------------------------------------------------------------
+// Views
 
-// What the fragment shader outputs: the shaded scene, one material input on
-// its own, for checking that each one loaded correctly, the ambient
-// occlusion, or how much of the sun's light reaches each point. Keys 1-9
-// and 0 pick one.
+// What the fragment shader outputs: the shaded scene, one material input on its own, for checking that each one loaded correctly, the ambient occlusion, or how much of the sun's light reaches each point. Keys 1-9 and 0 pick one.
 enum class View : std::uint32_t {
     lit,
     base_color,
@@ -477,14 +424,11 @@ enum class View : std::uint32_t {
     shadow,             // the sun's light that gets through: white all of it, black none
 };
 
-// --- The environment -----------------------------------------------------------
+// The environment
 
-// What the environment's compute shaders tell the CPU and the scene shader
-// about the sky, in host-visible memory both can read.
-//   - irradiance_sh: the light falling on a surface from the whole sky, as 9
-//     spherical harmonics coefficients per color channel (see environment.slang).
-//   - sun_illuminance: the sun's light at the ground after the atmosphere, in
-//     lux on a surface facing it; 0 when the sun is down or the sky is an image.
+// What the environment's compute shaders tell the CPU and the scene shader about the sky, in host-visible memory both can read.
+//   - irradiance_sh: the light falling on a surface from the whole sky, as 9 spherical harmonics coefficients per color channel (see environment.slang).
+//   - sun_illuminance: the sun's light at the ground after the atmosphere, in lux on a surface facing it; 0 when the sun is down or the sky is an image.
 struct EnvironmentInfo {
     std::array<glm::vec3, 9> irradiance_sh;
     glm::vec3 sun_illuminance;
@@ -492,18 +436,12 @@ struct EnvironmentInfo {
 
 static_assert(sizeof(EnvironmentInfo) == 120);
 
-// --- Per-frame data -----------------------------------------------------------
+// Per-frame data
 
-// Everything the shaders need that's the same for every draw in a frame. Each
-// frame in flight has its own copy in host-visible memory, rewritten by the
-// CPU before the frame is recorded. Push data points at it.
-//   - Lighting values are physical: lux for illuminance, nits (candela per
-//     square meter) for the brightness of the sky.
-//   - Pointers come right after the matrices, so all of them land on 8-byte
-//     boundaries with no padding.
-// Shaders work in camera-relative space: the world's axes, with the camera
-// at the origin. A position given by a cell and an offset (cells.h) is moved
-// into it by subtracting the camera's cell and offset.
+// Everything the shaders need that's the same for every draw in a frame. Each frame in flight has its own copy in host-visible memory, rewritten by the CPU before the frame is recorded. Push data points at it.
+//   - Lighting values are physical: lux for illuminance, nits (candela per square meter) for the brightness of the sky.
+//   - Pointers come right after the matrices, so all of them land on 8-byte boundaries with no padding.
+// Shaders work in camera-relative space: the world's axes, with the camera at the origin. A position given by a cell and an offset (cells.h) is moved into it by subtracting the camera's cell and offset.
 struct FrameData {
     glm::mat4 view_projection;          // camera-relative space -> clip space
     glm::mat4 inverse_view_projection;  // clip space -> camera-relative space
@@ -551,21 +489,18 @@ static_assert(offsetof(FrameData, camera_offset) == 272);
 static_assert(offsetof(FrameData, tlas_offset) == 284);
 static_assert(offsetof(FrameData, sky_view) == 296);
 
-// --- Push data ---------------------------------------------------------------
+// Push data
 
-// Written with vkCmdPushDataEXT before each pipeline's draws: where this
-// frame's data is. Which DrawData an instance draws, the vertex shader looks
-// up among the cull's instances.
+// Written with vkCmdPushDataEXT before each pipeline's draws: where this frame's data is. Which DrawData an instance draws, the vertex shader looks up among the cull's instances.
 struct PushData {
     vk::DeviceAddress frame;
 };
 
 static_assert(sizeof(PushData) == 8);
 
-// --- GPU culling (culling.h, cull.slang) ---------------------------------------
+// GPU culling (culling.h, cull.slang)
 
-// Draws of one primitive in one draw list, a run of the cull's order: drawn
-// as one instanced command, of as many instances as are in view.
+// Draws of one primitive in one draw list, a run of the cull's order: drawn as one instanced command, of as many instances as are in view.
 struct DrawGroup {
     std::uint32_t first;          // where its draws start in the order
     std::uint32_t count;          // how many draws
@@ -577,8 +512,7 @@ struct DrawGroup {
 
 static_assert(sizeof(DrawGroup) == 24);
 
-// A draw list's groups, a run of the group table. Each group has one command
-// slot, so it's the list's run of commands too.
+// A draw list's groups, a run of the group table. Each group has one command slot, so it's the list's run of commands too.
 struct DrawListRange {
     std::uint32_t first_group = 0;
     std::uint32_t group_count = 0;
@@ -612,22 +546,19 @@ struct CullPushData {
 
 static_assert(sizeof(CullPushData) == 16);
 
-// The tone-mapping pass's push data: which resource heap slot holds the HDR
-// image, and the view, so material views can skip tone mapping.
+// The tone-mapping pass's push data: which resource heap slot holds the HDR image, and the view, so material views can skip tone mapping.
 struct TonemapPushData {
     std::uint32_t hdr_image;
     View view;
 };
 
-// The transparency composite's push data (composite.slang): the resource heap
-// slots of the transparency pass's two sums.
+// The transparency composite's push data (composite.slang): the resource heap slots of the transparency pass's two sums.
 struct CompositePushData {
     std::uint32_t accum;
     std::uint32_t reveal;
 };
 
-// The environment compute shaders' push data. Each dispatch sets only what
-// its shader reads, so every member has a default.
+// The environment compute shaders' push data. Each dispatch sets only what its shader reads, so every member has a default.
 struct EnvironmentPushData {
     vk::DeviceAddress info = 0;     // where the EnvironmentInfo goes
     std::uint32_t source = 0;       // resource heap slot to read
@@ -641,11 +572,7 @@ struct EnvironmentPushData {
 static_assert(sizeof(EnvironmentPushData) == 32);
 static_assert(offsetof(EnvironmentPushData, size) == 16);
 
-// The atmosphere's compute shaders' push data (atmosphere.slang). Each step
-// reads what it needs: the per-frame ones the camera's height and the sun,
-// the aerial perspective the frame's view. Push data follows std430 rules,
-// where a vec3 starts on a 16-byte boundary: the two pointers fill the
-// first 16 bytes, so sun_direction lands on one.
+// The atmosphere's compute shaders' push data (atmosphere.slang). Each step reads what it needs: the per-frame ones the camera's height and the sun, the aerial perspective the frame's view. Push data follows std430 rules, where a vec3 starts on a 16-byte boundary: the two pointers fill the first 16 bytes, so sun_direction lands on one.
 struct AtmospherePushData {
     vk::DeviceAddress frame = 0;       // aerial perspective: this frame's FrameData
     vk::DeviceAddress info = 0;        // the sky cube: where the sunlight at the camera goes
@@ -663,8 +590,7 @@ static_assert(sizeof(AtmospherePushData) == 56);
 static_assert(offsetof(AtmospherePushData, sun_direction) == 16);
 static_assert(offsetof(AtmospherePushData, transmittance) == 32);
 
-// The mip chain compute shaders' push data (mips.slang). Every level of
-// every texture is in one buffer, reached through addresses.
+// The mip chain compute shaders' push data (mips.slang). Every level of every texture is in one buffer, reached through addresses.
 struct MipPushData {
     vk::DeviceAddress source = 0;      // texels read: the level above, or the level itself
     vk::DeviceAddress target = 0;      // texels written, or the histograms and scales
@@ -684,9 +610,7 @@ enum class MipKind : std::uint32_t {
     normal = 3,       // normal map: averaged as vectors, their spread in alpha
 };
 
-// The ambient occlusion compute shaders' push data (ao.slang), the same for
-// all four steps. The half-resolution images and `source` and `target` are
-// storage images; each step reads and writes the ones it needs.
+// The ambient occlusion compute shaders' push data (ao.slang), the same for all four steps. The half-resolution images and `source` and `target` are storage images; each step reads and writes the ones it needs.
 struct AoPushData {
     vk::DeviceAddress frame = 0;   // this frame's FrameData
     std::uint32_t depth = 0;       // resource heap slot: the depth buffer, sampled
@@ -751,283 +675,270 @@ static_assert(sizeof(AoPushData) == 56);
 
 namespace {
 
-// --- Decoding ----------------------------------------------------------------
+    // Decoding
 
-// What a failed image becomes: one magenta pixel, impossible to miss.
-DecodedImage missing_image(std::string error) {
-    return DecodedImage{.width = 1, .height = 1, .rgba = {255, 0, 255, 255}, .error = std::move(error)};
-}
-
-DecodedImage decode_jpeg(std::span<const std::uint8_t> encoded) {
-    int width = 0;
-    int height = 0;
-    int components = 0;
-
-    // Asking for 4 components gives RGBA, with alpha 255. jpgd allocates the
-    // pixels with malloc, so free() releases them.
-    const std::unique_ptr<unsigned char, decltype(&std::free)> pixels(
-        jpgd::decompress_jpeg_image_from_memory(encoded.data(), static_cast<int>(encoded.size()), &width, &height, &components, 4),
-        &std::free
-    );
-
-    if (!pixels) {
-        return missing_image("not a JPEG jpgd can decode");
+    // What a failed image becomes: one magenta pixel, impossible to miss.
+    DecodedImage missing_image(std::string error) {
+        return DecodedImage{.width = 1, .height = 1, .rgba = {255, 0, 255, 255}, .error = std::move(error)};
     }
 
-    const std::size_t size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
+    DecodedImage decode_jpeg(std::span<const std::uint8_t> encoded) {
+        int width = 0;
+        int height = 0;
+        int components = 0;
 
-    return DecodedImage{
-        .width = static_cast<std::uint32_t>(width),
-        .height = static_cast<std::uint32_t>(height),
-        .rgba = std::vector<std::uint8_t>(pixels.get(), pixels.get() + size),
+        // Asking for 4 components gives RGBA, with alpha 255. jpgd allocates the pixels with malloc, so free() releases them.
+        const std::unique_ptr<unsigned char, decltype(&std::free)> pixels(
+            jpgd::decompress_jpeg_image_from_memory(encoded.data(), static_cast<int>(encoded.size()), &width, &height, &components, 4),
+            &std::free
+        );
+
+        if (!pixels) {
+            return missing_image("not a JPEG jpgd can decode");
+        }
+
+        const std::size_t size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
+
+        return DecodedImage{
+            .width = static_cast<std::uint32_t>(width),
+            .height = static_cast<std::uint32_t>(height),
+            .rgba = std::vector<std::uint8_t>(pixels.get(), pixels.get() + size),
+        };
+    }
+
+    DecodedImage decode_png(std::span<const std::uint8_t> encoded) {
+        const std::unique_ptr<spng_ctx, decltype(&spng_ctx_free)> context(spng_ctx_new(0), &spng_ctx_free);
+
+        spng_ihdr header{};
+        std::size_t size = 0;
+
+        // SPNG_FMT_RGBA8 converts any PNG (grey, palette, 16-bit, ...) to 8-bit RGBA; SPNG_DECODE_TRNS turns a transparency chunk into real alpha.
+        const bool decoded = context
+            && spng_set_png_buffer(context.get(), encoded.data(), encoded.size()) == 0
+            && spng_get_ihdr(context.get(), &header) == 0
+            && spng_decoded_image_size(context.get(), SPNG_FMT_RGBA8, &size) == 0;
+
+        if (!decoded) {
+            return missing_image("not a PNG libspng can read");
+        }
+
+        DecodedImage image{.width = header.width, .height = header.height, .rgba = std::vector<std::uint8_t>(size)};
+
+        if (spng_decode_image(context.get(), image.rgba.data(), size, SPNG_FMT_RGBA8, SPNG_DECODE_TRNS) != 0) {
+            return missing_image("libspng failed to decode it");
+        }
+
+        return image;
+    }
+
+    // Chooses the decoder from the file's first bytes, its "magic number", which is more reliable than the file name or the glTF mimeType.
+    DecodedImage decode_image(std::span<const std::uint8_t> encoded) {
+        constexpr std::uint8_t png[] = {0x89, 'P', 'N', 'G'};
+        constexpr std::uint8_t jpeg[] = {0xFF, 0xD8, 0xFF};
+
+        if (encoded.size() >= 4 && std::equal(std::begin(png), std::end(png), encoded.begin())) {
+            return decode_png(encoded);
+        }
+
+        if (encoded.size() >= 3 && std::equal(std::begin(jpeg), std::end(jpeg), encoded.begin())) {
+            return decode_jpeg(encoded);
+        }
+
+        return missing_image(encoded.empty() ? "no image data" : "not a PNG or JPEG");
+    }
+
+    // Uploading
+
+    // Moves mip levels [base, base + count) of `image` between layouts.
+    void transition_mips(
+        const vk::raii::CommandBuffer &commands,
+        vk::Image image,
+        std::uint32_t base,
+        std::uint32_t count,
+        vk::ImageLayout from,
+        vk::ImageLayout to,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access
+    ) {
+        const vk::ImageMemoryBarrier2 barrier{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = image,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = base,
+                .levelCount = count,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+
+        commands.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+    }
+
+    // Makes writes by `src_stage` visible to `dst_stage`, for every buffer.
+    void memory_barrier(
+        const vk::raii::CommandBuffer &commands,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access
+    ) {
+        const vk::MemoryBarrier2 barrier{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+        };
+
+        commands.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
+    }
+
+    // An image for `decoded` with room for every mip level, in device-local memory.
+    Texture create_texture(const vk::raii::Device &device, const GpuChoice &gpu, const DecodedImage &decoded, vk::Format format) {
+        Texture texture;
+        texture.format = format;
+        texture.extent = vk::Extent2D{.width = decoded.width, .height = decoded.height};
+
+        // Halving until 1x1: a 1024x1024 image has 11 levels (1024, 512, ..., 1).
+        texture.mip_levels = std::bit_width(std::max(decoded.width, decoded.height));
+
+        texture.handle = vk::raii::Image(device, vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D,
+            .format = format,
+            .extent = {decoded.width, decoded.height, 1},
+            .mipLevels = texture.mip_levels,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            // Every level is copied in from the mip buffer, then sampled.
+            .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            .sharingMode = vk::SharingMode::eExclusive,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        });
+
+        const vk::MemoryRequirements requirements = texture.handle.getMemoryRequirements();
+
+        texture.memory = vk::raii::DeviceMemory(device, vk::MemoryAllocateInfo{
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = find_memory_type(gpu, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal),
+        });
+
+        texture.handle.bindMemory(*texture.memory, 0);
+        return texture;
+    }
+
+    // Mip chains
+
+    // One texture's levels in the mip buffer, and how they're made.
+    struct MipChain {
+        std::vector<glm::uvec2> sizes;          // each level's, in texels
+        std::vector<vk::DeviceSize> offsets;    // each level's, in bytes into the mip buffer
+        MipKind kind = MipKind::data;
+        float cutoff = 0.0f;                    // a masked base color's: the texture alpha that's kept; 0 for none
+        vk::DeviceSize coverage = 0;            // masked: where its histograms, then its scales, start in the coverage buffer
     };
-}
 
-DecodedImage decode_png(std::span<const std::uint8_t> encoded) {
-    const std::unique_ptr<spng_ctx, decltype(&spng_ctx_free)> context(spng_ctx_new(0), &spng_ctx_free);
+    // What each image is used for, from the materials: how its mips average (MipKind), and, for a masked material's base color, the alpha its texels must reach to be kept. Texture i + 1 is image i; texture 0 is white.
+    std::vector<MipChain> plan_mips(const Scene &scene, std::span<const DecodedImage> images) {
+        std::vector<MipChain> chains(images.size());
+        std::vector<bool> as_normal(images.size(), false);
+        std::vector<bool> as_other(images.size(), false);        // anything but a normal map
+        std::vector<bool> as_see_through(images.size(), false);  // a masked or blended base color
+        std::vector<bool> as_opaque_color(images.size(), false); // any other color: its alpha means nothing
 
-    spng_ihdr header{};
-    std::size_t size = 0;
+        for (const SceneMaterial &material : scene.materials) {
+            for (const TextureRef *ref : {&material.base_color, &material.metallic_roughness, &material.occlusion, &material.emissive}) {
+                if (ref->image >= 0) {
+                    as_other[static_cast<std::size_t>(ref->image) + 1] = true;
+                }
+            }
 
-    // SPNG_FMT_RGBA8 converts any PNG (grey, palette, 16-bit, ...) to 8-bit
-    // RGBA; SPNG_DECODE_TRNS turns a transparency chunk into real alpha.
-    const bool decoded = context
-        && spng_set_png_buffer(context.get(), encoded.data(), encoded.size()) == 0
-        && spng_get_ihdr(context.get(), &header) == 0
-        && spng_decoded_image_size(context.get(), SPNG_FMT_RGBA8, &size) == 0;
+            if (material.normal.image >= 0) {
+                as_normal[static_cast<std::size_t>(material.normal.image) + 1] = true;
+            }
 
-    if (!decoded) {
-        return missing_image("not a PNG libspng can read");
-    }
+            if (material.base_color.image >= 0) {
+                const auto image = static_cast<std::size_t>(material.base_color.image) + 1;
+                (material.alpha_mode == AlphaMode::opaque ? as_opaque_color : as_see_through)[image] = true;
+            }
 
-    DecodedImage image{.width = header.width, .height = header.height, .rgba = std::vector<std::uint8_t>(size)};
+            if (material.emissive.image >= 0) {
+                as_opaque_color[static_cast<std::size_t>(material.emissive.image) + 1] = true;
+            }
 
-    if (spng_decode_image(context.get(), image.rgba.data(), size, SPNG_FMT_RGBA8, SPNG_DECODE_TRNS) != 0) {
-        return missing_image("libspng failed to decode it");
-    }
+            // The material keeps a pixel where factor x texture x vertex color reaches the cutoff; with vertex color 1, the texture's alpha must reach cutoff / factor. Above 1, nothing is kept at any level.
+            const float factor = material.base_color_factor.a;
+            if (material.alpha_mode == AlphaMode::mask && material.base_color.image >= 0 && factor > 0.0f) {
+                MipChain &chain = chains[static_cast<std::size_t>(material.base_color.image) + 1];
+                const float cutoff = material.alpha_cutoff / factor;
 
-    return image;
-}
-
-// Chooses the decoder from the file's first bytes, its "magic number", which
-// is more reliable than the file name or the glTF mimeType.
-DecodedImage decode_image(std::span<const std::uint8_t> encoded) {
-    constexpr std::uint8_t png[] = {0x89, 'P', 'N', 'G'};
-    constexpr std::uint8_t jpeg[] = {0xFF, 0xD8, 0xFF};
-
-    if (encoded.size() >= 4 && std::equal(std::begin(png), std::end(png), encoded.begin())) {
-        return decode_png(encoded);
-    }
-
-    if (encoded.size() >= 3 && std::equal(std::begin(jpeg), std::end(jpeg), encoded.begin())) {
-        return decode_jpeg(encoded);
-    }
-
-    return missing_image(encoded.empty() ? "no image data" : "not a PNG or JPEG");
-}
-
-// --- Uploading ---------------------------------------------------------------
-
-// Moves mip levels [base, base + count) of `image` between layouts.
-void transition_mips(
-    const vk::raii::CommandBuffer &commands,
-    vk::Image image,
-    std::uint32_t base,
-    std::uint32_t count,
-    vk::ImageLayout from,
-    vk::ImageLayout to,
-    vk::PipelineStageFlags2 src_stage,
-    vk::AccessFlags2 src_access,
-    vk::PipelineStageFlags2 dst_stage,
-    vk::AccessFlags2 dst_access
-) {
-    const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-        .oldLayout = from,
-        .newLayout = to,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = image,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = base,
-            .levelCount = count,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-    };
-
-    commands.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
-}
-
-// Makes writes by `src_stage` visible to `dst_stage`, for every buffer.
-void memory_barrier(
-    const vk::raii::CommandBuffer &commands,
-    vk::PipelineStageFlags2 src_stage,
-    vk::AccessFlags2 src_access,
-    vk::PipelineStageFlags2 dst_stage,
-    vk::AccessFlags2 dst_access
-) {
-    const vk::MemoryBarrier2 barrier{
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-    };
-
-    commands.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
-}
-
-// An image for `decoded` with room for every mip level, in device-local memory.
-Texture create_texture(const vk::raii::Device &device, const GpuChoice &gpu, const DecodedImage &decoded, vk::Format format) {
-    Texture texture;
-    texture.format = format;
-    texture.extent = vk::Extent2D{.width = decoded.width, .height = decoded.height};
-
-    // Halving until 1x1: a 1024x1024 image has 11 levels (1024, 512, ..., 1).
-    texture.mip_levels = std::bit_width(std::max(decoded.width, decoded.height));
-
-    texture.handle = vk::raii::Image(device, vk::ImageCreateInfo{
-        .imageType = vk::ImageType::e2D,
-        .format = format,
-        .extent = {decoded.width, decoded.height, 1},
-        .mipLevels = texture.mip_levels,
-        .arrayLayers = 1,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        // Every level is copied in from the mip buffer, then sampled.
-        .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined,
-    });
-
-    const vk::MemoryRequirements requirements = texture.handle.getMemoryRequirements();
-
-    texture.memory = vk::raii::DeviceMemory(device, vk::MemoryAllocateInfo{
-        .allocationSize = requirements.size,
-        .memoryTypeIndex = find_memory_type(gpu, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal),
-    });
-
-    texture.handle.bindMemory(*texture.memory, 0);
-    return texture;
-}
-
-// --- Mip chains --------------------------------------------------------------
-
-// One texture's levels in the mip buffer, and how they're made.
-struct MipChain {
-    std::vector<glm::uvec2> sizes;          // each level's, in texels
-    std::vector<vk::DeviceSize> offsets;    // each level's, in bytes into the mip buffer
-    MipKind kind = MipKind::data;
-    float cutoff = 0.0f;                    // a masked base color's: the texture alpha that's kept; 0 for none
-    vk::DeviceSize coverage = 0;            // masked: where its histograms, then its scales, start in the coverage buffer
-};
-
-// What each image is used for, from the materials: how its mips average
-// (MipKind), and, for a masked material's base color, the alpha its texels
-// must reach to be kept. Texture i + 1 is image i; texture 0 is white.
-std::vector<MipChain> plan_mips(const Scene &scene, std::span<const DecodedImage> images) {
-    std::vector<MipChain> chains(images.size());
-    std::vector<bool> as_normal(images.size(), false);
-    std::vector<bool> as_other(images.size(), false);        // anything but a normal map
-    std::vector<bool> as_see_through(images.size(), false);  // a masked or blended base color
-    std::vector<bool> as_opaque_color(images.size(), false); // any other color: its alpha means nothing
-
-    for (const SceneMaterial &material : scene.materials) {
-        for (const TextureRef *ref : {&material.base_color, &material.metallic_roughness, &material.occlusion, &material.emissive}) {
-            if (ref->image >= 0) {
-                as_other[static_cast<std::size_t>(ref->image) + 1] = true;
+                // A texture shared by masked materials with different cutoffs keeps the first one's coverage.
+                if (chain.cutoff == 0.0f && cutoff > 0.0f && cutoff <= 1.0f) {
+                    chain.cutoff = cutoff;
+                }
             }
         }
 
-        if (material.normal.image >= 0) {
-            as_normal[static_cast<std::size_t>(material.normal.image) + 1] = true;
-        }
+        vk::DeviceSize offset = 0;
 
-        if (material.base_color.image >= 0) {
-            const auto image = static_cast<std::size_t>(material.base_color.image) + 1;
-            (material.alpha_mode == AlphaMode::opaque ? as_opaque_color : as_see_through)[image] = true;
-        }
+        for (std::size_t i = 0; i < images.size(); ++i) {
+            MipChain &chain = chains[i];
+            const bool srgb = i == 0 || scene.images[i - 1].srgb;
 
-        if (material.emissive.image >= 0) {
-            as_opaque_color[static_cast<std::size_t>(material.emissive.image) + 1] = true;
-        }
+            // Colors weight by alpha only where every use takes alpha as coverage or opacity: an opaque material shows its texels whatever their alpha. An image that's a normal map and something else too is averaged as plain data: its alpha may mean something.
+            if (srgb) {
+                chain.kind = as_see_through[i] && !as_opaque_color[i] ? MipKind::see_through : MipKind::color;
+            } else {
+                chain.kind = as_normal[i] && !as_other[i] ? MipKind::normal : MipKind::data;
+            }
 
-        // The material keeps a pixel where factor x texture x vertex color
-        // reaches the cutoff; with vertex color 1, the texture's alpha must
-        // reach cutoff / factor. Above 1, nothing is kept at any level.
-        const float factor = material.base_color_factor.a;
-        if (material.alpha_mode == AlphaMode::mask && material.base_color.image >= 0 && factor > 0.0f) {
-            MipChain &chain = chains[static_cast<std::size_t>(material.base_color.image) + 1];
-            const float cutoff = material.alpha_cutoff / factor;
+            glm::uvec2 size{images[i].width, images[i].height};
+            const std::uint32_t levels = std::bit_width(std::max(size.x, size.y));
 
-            // A texture shared by masked materials with different cutoffs
-            // keeps the first one's coverage.
-            if (chain.cutoff == 0.0f && cutoff > 0.0f && cutoff <= 1.0f) {
-                chain.cutoff = cutoff;
+            for (std::uint32_t level = 0; level < levels; ++level) {
+                chain.sizes.push_back(size);
+                chain.offsets.push_back(offset);
+                offset += vk::DeviceSize{size.x} * size.y * 4;
+                size = glm::max(size / 2u, glm::uvec2{1});
             }
         }
+
+        return chains;
     }
 
-    vk::DeviceSize offset = 0;
-
-    for (std::size_t i = 0; i < images.size(); ++i) {
-        MipChain &chain = chains[i];
-        const bool srgb = i == 0 || scene.images[i - 1].srgb;
-
-        // Colors weight by alpha only where every use takes alpha as
-        // coverage or opacity: an opaque material shows its texels whatever
-        // their alpha. An image that's a normal map and something else too
-        // is averaged as plain data: its alpha may mean something.
-        if (srgb) {
-            chain.kind = as_see_through[i] && !as_opaque_color[i] ? MipKind::see_through : MipKind::color;
-        } else {
-            chain.kind = as_normal[i] && !as_other[i] ? MipKind::normal : MipKind::data;
-        }
-
-        glm::uvec2 size{images[i].width, images[i].height};
-        const std::uint32_t levels = std::bit_width(std::max(size.x, size.y));
-
-        for (std::uint32_t level = 0; level < levels; ++level) {
-            chain.sizes.push_back(size);
-            chain.offsets.push_back(offset);
-            offset += vk::DeviceSize{size.x} * size.y * 4;
-            size = glm::max(size / 2u, glm::uvec2{1});
-        }
+    // Runs one of mips.slang's steps, over `x` x `y` threads in workgroups of `group_x` x `group_y`.
+    void dispatch_mips(
+        const vk::raii::CommandBuffer &commands,
+        const MipPushData &push,
+        std::uint32_t x,
+        std::uint32_t y,
+        std::uint32_t group_x,
+        std::uint32_t group_y
+    ) {
+        commands.pushDataEXT(vk::PushDataInfoEXT{
+            .offset = 0,
+            .data = {.address = &push, .size = sizeof(push)},
+        });
+        commands.dispatch((x + group_x - 1) / group_x, (y + group_y - 1) / group_y, 1);
     }
-
-    return chains;
-}
-
-// Runs one of mips.slang's steps, over `x` x `y` threads in workgroups of
-// `group_x` x `group_y`.
-void dispatch_mips(
-    const vk::raii::CommandBuffer &commands,
-    const MipPushData &push,
-    std::uint32_t x,
-    std::uint32_t y,
-    std::uint32_t group_x,
-    std::uint32_t group_y
-) {
-    commands.pushDataEXT(vk::PushDataInfoEXT{
-        .offset = 0,
-        .data = {.address = &push, .size = sizeof(push)},
-    });
-    commands.dispatch((x + group_x - 1) / group_x, (y + group_y - 1) / group_y, 1);
-}
 
 }  // namespace
 
-// --- Decoding ----------------------------------------------------------------
+// Decoding
 
 std::vector<DecodedImage> decode_images(std::span<const SceneImage> images) {
     std::vector<DecodedImage> decoded(images.size());
 
-    // Each worker thread takes the next undecoded image until none are left.
-    // Images are independent, so the threads never touch the same one.
+    // Each worker thread takes the next undecoded image until none are left. Images are independent, so the threads never touch the same one.
     std::atomic<std::size_t> next{0};
     const unsigned workers = std::max(1u, std::thread::hardware_concurrency());
 
@@ -1052,7 +963,7 @@ std::vector<DecodedImage> decode_images(std::span<const SceneImage> images) {
     return decoded;
 }
 
-// --- GPU textures ------------------------------------------------------------
+// GPU textures
 
 std::vector<Texture> create_scene_textures(
     const vk::raii::Device &device,
@@ -1069,9 +980,7 @@ std::vector<Texture> create_scene_textures(
         images.push_back(std::move(image));
     }
 
-    // sRGB formats make the GPU decode colors to linear when sampling; data
-    // textures stay as they are. Vulkan requires both formats to support
-    // linear filtering, so every GPU can sample them smoothly.
+    // sRGB formats make the GPU decode colors to linear when sampling; data textures stay as they are. Vulkan requires both formats to support linear filtering, so every GPU can sample them smoothly.
     for (const SceneImage &image : scene.images) {
         formats.push_back(image.srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm);
     }
@@ -1099,8 +1008,7 @@ std::vector<Texture> create_scene_textures(
 
     staging.memory.unmapMemory();
 
-    // Every level of every texture, in device memory, where compute shaders
-    // make the levels below the top through its address.
+    // Every level of every texture, in device memory, where compute shaders make the levels below the top through its address.
     const MipChain &last = chains.back();
     const vk::DeviceSize mip_bytes = last.offsets.back() + vk::DeviceSize{last.sizes.back().x} * last.sizes.back().y * 4;
     const Buffer mips = create_buffer(device, gpu, mip_bytes,
@@ -1108,8 +1016,7 @@ std::vector<Texture> create_scene_textures(
             | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    // Masked base colors also need, per level, a 256-bin alpha histogram,
-    // then, per level, a scale: in a buffer of their own, zeroed first.
+    // Masked base colors also need, per level, a 256-bin alpha histogram, then, per level, a scale: in a buffer of their own, zeroed first.
     vk::DeviceSize coverage_bytes = 4;  // never empty
     for (MipChain &chain : chains) {
         if (chain.cutoff > 0.0f) {
@@ -1169,8 +1076,7 @@ std::vector<Texture> create_scene_textures(
 
         compute_to_compute(commands);
 
-        // 3. Level by level, every texture's next level from the one above.
-        // Textures are independent, so one barrier per level covers them all.
+        // 3. Level by level, every texture's next level from the one above. Textures are independent, so one barrier per level covers them all.
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *downsample);
         std::size_t most_levels = 0;
         for (const MipChain &chain : chains) {
@@ -1194,8 +1100,7 @@ std::vector<Texture> create_scene_textures(
             compute_to_compute(commands);
         }
 
-        // 4. Masked base colors: count every level's alpha, work out each
-        // level's scale, then apply it below the top.
+        // 4. Masked base colors: count every level's alpha, work out each level's scale, then apply it below the top.
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *histogram);
         for (const MipChain &chain : chains) {
             for (std::size_t level = 0; chain.cutoff > 0.0f && level < chain.sizes.size(); ++level) {
@@ -1294,17 +1199,12 @@ With the normal map's spread in its alpha, the fragment shader has both spreads 
 ### Code
 `game-engine/shaders/mesh.slang`:
 ```slang
-// Draws one glTF primitive: its vertices come from the scene's vertex buffer,
-// its place in the world from its DrawData, and its surface from its glTF
-// material, whose textures are read from the descriptor heap. Shaded with
-// glTF's physically based BRDF, lit by the sun and the file's lights, with
-// ray-traced shadows, and by the sky around the scene, already exposed.
-// Three fragment shaders:
+// Draws one glTF primitive: its vertices come from the scene's vertex buffer, its place in the world from its DrawData, and its surface from its glTF material, whose textures are read from the descriptor heap. Shaded with glTF's physically based BRDF, lit by the sun and the file's lights, with ray-traced shadows, and by the sky around the scene, already exposed. Three fragment shaders:
 //   prepassMain      the depth prepass's vertex normal
 //   fragmentMain     opaque and masked surfaces, into the HDR image
 //   transparentMain  blended surfaces, into weighted blended transparency's sums
 
-// --- Data shared with C++ (src/includes/shader_types.h) ----------------------
+// Data shared with C++ (src/includes/shader_types.h)
 
 #include "shared.slangh"
 #include "atmosphere.slangh"
@@ -1313,10 +1213,7 @@ With the normal map's spread in its alpha, the fragment shader has both spreads 
 [[vk::push_constant]]
 ConstantBuffer<PushData> push;
 
-// The alpha mode this pipeline was built for (AlphaMode in C++):
-// 0 opaque, 1 mask, 2 blend. A specialization constant: its value is
-// fixed when the pipeline is created, so each pipeline's fragment shader
-// keeps only the code its mode needs.
+// The alpha mode this pipeline was built for (AlphaMode in C++): 0 opaque, 1 mask, 2 blend. A specialization constant: its value is fixed when the pipeline is created, so each pipeline's fragment shader keeps only the code its mode needs.
 [vk::constant_id(0)]
 const uint alpha_mode = 0;
 
@@ -1324,12 +1221,9 @@ static const uint alpha_opaque = 0;
 static const uint alpha_mask = 1;
 static const uint alpha_blend = 2;
 
-// --- Stage interface ---------------------------------------------------------
+// Stage interface
 
-// What the vertex shader hands to the rasterizer. SV_Position is the
-// clip-space position; every other field but draw_index is interpolated
-// across the triangle. Vulkan requires integer fields to be flat, which
-// nointerpolation makes them.
+// What the vertex shader hands to the rasterizer. SV_Position is the clip-space position; every other field but draw_index is interpolated across the triangle. Vulkan requires integer fields to be flat, which nointerpolation makes them.
 struct VertexOutput {
     float4 position : SV_Position;
     float3 relative_position : POSITION;  // camera-relative: the world's axes, the camera at the origin
@@ -1342,14 +1236,9 @@ struct VertexOutput {
     nointerpolation uint draw_index : DRAW_INDEX;  // the same for a whole triangle, so never interpolated
 };
 
-// --- Vertex shader -----------------------------------------------------------
+// Vertex shader
 
-// SV_VulkanVertexID is Vulkan's own gl_VertexIndex, which includes the draw's
-// vertexOffset: each primitive's indices start at 0, and the draw adds where
-// that primitive's vertices begin in the shared buffer. SV_VulkanInstanceID
-// is gl_InstanceIndex, which likewise counts from the command's
-// firstInstance: the cull points that at the command's run of visible draws
-// in `instances`, so each instance finds its draw there.
+// SV_VulkanVertexID is Vulkan's own gl_VertexIndex, which includes the draw's vertexOffset: each primitive's indices start at 0, and the draw adds where that primitive's vertices begin in the shared buffer. SV_VulkanInstanceID is gl_InstanceIndex, which likewise counts from the command's firstInstance: the cull points that at the command's run of visible draws in `instances`, so each instance finds its draw there.
 [shader("vertex")]
 VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
     FrameData *frame = push.frame;
@@ -1361,10 +1250,7 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_V
     const float3 in_cell = mul(draw.model, float4(vertex.position, 1.0)).xyz;
     const float3 relative_position = camera_relative(frame, draw.cell, in_cell);
 
-    // Tangent and bitangent lie along the surface, so they move with the
-    // model matrix, like positions; only the normal needs the normal matrix.
-    // The bitangent is built before the transform, from glTF's rule
-    // B = cross(N, T) * w: a mirroring transform then mirrors it too.
+    // Tangent and bitangent lie along the surface, so they move with the model matrix, like positions; only the normal needs the normal matrix. The bitangent is built before the transform, from glTF's rule B = cross(N, T) * w: a mirroring transform then mirrors it too.
     const float3 bitangent = cross(vertex.normal, vertex.tangent.xyz) * vertex.tangent.w;
 
     VertexOutput output;
@@ -1380,11 +1266,9 @@ VertexOutput vertexMain(uint vertex_id : SV_VulkanVertexID, uint instance : SV_V
     return output;
 }
 
-// --- Material textures -------------------------------------------------------
+// Material textures
 
-// Samples a material slot: its texture, with its sampler, at its set of
-// texture coordinates. Descriptor heap access: a handle made from an index
-// reads that descriptor from the bound heap.
+// Samples a material slot: its texture, with its sampler, at its set of texture coordinates. Descriptor heap access: a handle made from an index reads that descriptor from the bound heap.
 float4 sample_slot(TextureSlot slot, VertexOutput input) {
     const Texture2D texture = Texture2D.Handle(uint2(slot.texture, 0));
     const SamplerState sampler = SamplerState.Handle(uint2(slot.sampler, 0));
@@ -1392,23 +1276,18 @@ float4 sample_slot(TextureSlot slot, VertexOutput input) {
     return texture.Sample(sampler, uv);
 }
 
-// --- Normals -----------------------------------------------------------------
+// Normals
 
 // The direction the surface faces at this pixel, for lighting.
-//   1. The interpolated vertex normal. Without normals in the file, glTF asks
-//      for flat shading: the triangle's own normal is the cross product of
-//      how the position changes across neighbouring pixels (ddx, ddy).
+//   1. The interpolated vertex normal. Without normals in the file, glTF asks for flat shading: the triangle's own normal is the cross product of how the position changes across neighbouring pixels (ddx, ddy).
 //   2. A normal map tilts it, per texel, within the surface's tangent frame.
 //   3. On a double-sided material's back face, the surface faces the other way.
-// `map_spread`: how much the normal map's normals spread here, as the
-// standard deviation of their angle, which the mips keep in its alpha as
-// 1 - spread (mips.slang); 0 without a map.
+// `map_spread`: how much the normal map's normals spread here, as the standard deviation of their angle, which the mips keep in its alpha as 1 - spread (mips.slang); 0 without a map.
 float3 surface_normal(VertexOutput input, Material material, bool front_face, bool apply_normal_map, out float map_spread) {
     float3 normal = input.normal;
     map_spread = 0.0;
 
-    // cross(ddy, ddx), not cross(ddx, ddy): Vulkan's screen Y points down,
-    // so this order is the one that points toward the camera.
+    // cross(ddy, ddx), not cross(ddx, ddy): Vulkan's screen Y points down, so this order is the one that points toward the camera.
     if (all(normal == 0.0)) {
         normal = cross(ddy(input.relative_position), ddx(input.relative_position));
     }
@@ -1421,16 +1300,10 @@ float3 surface_normal(VertexOutput input, Material material, bool front_face, bo
     float3 tangent = input.tangent;
     float3 bitangent = input.bitangent;
 
-    // Without tangents in the file, work the frame out from how position and
-    // texture coordinates change between neighbouring pixels (ddx, ddy):
+    // Without tangents in the file, work the frame out from how position and texture coordinates change between neighbouring pixels (ddx, ddy):
     //     dp/dx = P_u * du/dx + P_v * dv/dx
     //     dp/dy = P_u * du/dy + P_v * dv/dy
-    // Solving these for P_u and P_v, how position changes per unit of u and v,
-    // gives the tangent (+u) and bitangent. glTF's v runs down the image while
-    // a normal map's +Y points up, so the bitangent is -P_v. Only the
-    // directions matter, so the determinant's sign stands in for dividing by
-    // it. This can differ slightly from the MikkTSpace tangents glTF
-    // specifies, but needs no precomputation.
+    // Solving these for P_u and P_v, how position changes per unit of u and v, gives the tangent (+u) and bitangent. glTF's v runs down the image while a normal map's +Y points up, so the bitangent is -P_v. Only the directions matter, so the determinant's sign stands in for dividing by it. This can differ slightly from the MikkTSpace tangents glTF specifies, but needs no precomputation.
     if (mapped && all(tangent == 0.0)) {
         const float2 uv = material.normal.uv_set == 0 ? input.uv0 : input.uv1;
         const float3 dp_dx = ddx(input.relative_position);
@@ -1452,20 +1325,16 @@ float3 surface_normal(VertexOutput input, Material material, bool front_face, bo
         bitangent = -bitangent;
     }
 
-    // Texture coordinates that don't change across the triangle give no frame
-    // at all; the plain normal is all we have then.
+    // Texture coordinates that don't change across the triangle give no frame at all; the plain normal is all we have then.
     if (!mapped || all(tangent == 0.0) || all(bitangent == 0.0)) {
         return normal;
     }
 
-    // All three axes must be unit length, or the map's tilt is scaled with
-    // them. The normal already is; the other two grow and shrink with the
-    // model matrix, and interpolation shortens them between vertices.
+    // All three axes must be unit length, or the map's tilt is scaled with them. The normal already is; the other two grow and shrink with the model matrix, and interpolation shortens them between vertices.
     tangent = normalize(tangent);
     bitangent = normalize(bitangent);
 
-    // The map stores each component in 0..1; unpack to -1..1. normal_scale
-    // scales the tilt: X and Y only, as glTF specifies.
+    // The map stores each component in 0..1; unpack to -1..1. normal_scale scales the tilt: X and Y only, as glTF specifies.
     const float4 texel = sample_slot(material.normal, input);
     float3 tangent_space = texel.xyz * 2.0 - 1.0;
     tangent_space.xy *= material.normal_scale;
@@ -1474,12 +1343,9 @@ float3 surface_normal(VertexOutput input, Material material, bool front_face, bo
     return normalize(tangent * tangent_space.x + bitangent * tangent_space.y + normal * tangent_space.z);
 }
 
-// --- The glTF BRDF -----------------------------------------------------------
+// The glTF BRDF
 
-// glTF's metallic-roughness model, as its specification's Appendix B writes
-// it. A BRDF says how much of the light arriving from one direction leaves
-// toward another: here from the light (l) toward the viewer (v), around the
-// half vector h between them.
+// glTF's metallic-roughness model, as its specification's Appendix B writes it. A BRDF says how much of the light arriving from one direction leaves toward another: here from the light (l) toward the viewer (v), around the half vector h between them.
 
 static const float pi = 3.14159265;
 
@@ -1493,17 +1359,14 @@ struct Surface {
     float3 energy_compensation;  // what the specular reflection is scaled by (energy_compensation)
 };
 
-// D: the GGX (Trowbridge-Reitz) distribution of microfacet normals. Smooth
-// surfaces have nearly all their tiny facets aligned with the normal, so D
-// is a tall, narrow peak around h = n; rough ones spread it out.
+// D: the GGX (Trowbridge-Reitz) distribution of microfacet normals. Smooth surfaces have nearly all their tiny facets aligned with the normal, so D is a tall, narrow peak around h = n; rough ones spread it out.
 float distribution_ggx(float n_dot_h, float alpha) {
     const float alpha2 = alpha * alpha;
     const float f = n_dot_h * n_dot_h * (alpha2 - 1.0) + 1.0;
     return alpha2 / (pi * f * f);
 }
 
-// V: Smith's height-correlated visibility, the share of facets neither in
-// shadow nor hidden, with the BRDF's 1 / (4 n.l n.v) folded in.
+// V: Smith's height-correlated visibility, the share of facets neither in shadow nor hidden, with the BRDF's 1 / (4 n.l n.v) folded in.
 float visibility_smith(float n_dot_l, float n_dot_v, float alpha) {
     const float alpha2 = alpha * alpha;
     const float from_view = n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - alpha2) + alpha2);
@@ -1512,8 +1375,7 @@ float visibility_smith(float n_dot_l, float n_dot_v, float alpha) {
     return sum > 0.0 ? 0.5 / sum : 0.0;
 }
 
-// The light leaving toward the viewer, in nits, from light arriving from
-// direction `l` with illuminance `illuminance` (lux, on a surface facing it).
+// The light leaving toward the viewer, in nits, from light arriving from direction `l` with illuminance `illuminance` (lux, on a surface facing it).
 float3 shade(Surface surface, float3 l, float3 illuminance) {
     const float n_dot_l = dot(surface.normal, l);
 
@@ -1532,10 +1394,7 @@ float3 shade(Surface surface, float3 l, float3 illuminance) {
     // Schlick's Fresnel: every surface reflects more at grazing angles.
     const float fresnel = pow(1.0 - v_dot_h, 5.0);
 
-    // Metals tint their reflection with the base color and have no diffuse
-    // part. Dielectrics (everything else) reflect 4% head-on, rising to 100%
-    // at grazing angles, and the rest enters the surface and scatters back
-    // out as Lambertian diffuse light, colored by the base color.
+    // Metals tint their reflection with the base color and have no diffuse part. Dielectrics (everything else) reflect 4% head-on, rising to 100% at grazing angles, and the rest enters the surface and scatters back out as Lambertian diffuse light, colored by the base color.
     const float3 compensated = specular * surface.energy_compensation;
     const float3 metal = compensated * (surface.base_color + (1.0 - surface.base_color) * fresnel);
     const float3 dielectric = lerp(surface.base_color / pi, compensated, 0.04 + 0.96 * fresnel);
@@ -1545,19 +1404,12 @@ float3 shade(Surface surface, float3 l, float3 illuminance) {
     return brdf * illuminance * n_dot_l;
 }
 
-// --- Shadows -------------------------------------------------------------------
+// Shadows
 
 // How far a ray toward the sun, or another light infinitely far away, may go.
 static const float infinite_distance = 1e9;
 
-// A ray starting exactly on a surface can hit that same surface: the hit
-// point's rounding puts it a hair below. This moves the origin off the
-// surface along its geometric normal by up to 256 units in the last place
-// (ULPs) of each coordinate: an offset that grows with the coordinates, so
-// it suits any distance from the origin, where a fixed distance would be too
-// much near it and too little far away. The constants are the authors',
-// found by experiment. From "A Fast and Robust Method for Avoiding
-// Self-Intersection" (Wachter and Binder, Ray Tracing Gems, 2019).
+// A ray starting exactly on a surface can hit that same surface: the hit point's rounding puts it a hair below. This moves the origin off the surface along its geometric normal by up to 256 units in the last place (ULPs) of each coordinate: an offset that grows with the coordinates, so it suits any distance from the origin, where a fixed distance would be too much near it and too little far away. The constants are the authors', found by experiment. From "A Fast and Robust Method for Avoiding Self-Intersection" (Wachter and Binder, Ray Tracing Gems, 2019).
 float3 offset_ray_origin(float3 position, float3 normal) {
     const float near_origin = 1.0 / 32.0;
     const float float_scale = 1.0 / 65536.0;
@@ -1569,21 +1421,14 @@ float3 offset_ray_origin(float3 position, float3 normal) {
         const int step = int(int_scale * normal[axis]);
         const float stepped = asfloat(asint(position[axis]) + (position[axis] < 0.0 ? -step : step));
 
-        // Close to 0 a few units in the last place are tiny, so add a small
-        // fixed distance there instead.
+        // Close to 0 a few units in the last place are tiny, so add a small fixed distance there instead.
         offset[axis] = abs(position[axis]) < near_origin ? position[axis] + float_scale * normal[axis] : stepped;
     }
 
     return offset;
 }
 
-// The alpha of a masked or blended triangle a ray met, at the hit point. The
-// hit's barycentric coordinates weight the triangle's three vertices; the
-// texture is read at full resolution, since there are no neighbouring pixels
-// to pick a mip level from. Rays from neighbouring pixels can hit different
-// materials, so the texture's heap index differs between them: that's fine,
-// since descriptor heap access is non-uniform unless the SPIR-V marks it
-// uniform, and Slang doesn't.
+// The alpha of a masked or blended triangle a ray met, at the hit point. The hit's barycentric coordinates weight the triangle's three vertices; the texture is read at full resolution, since there are no neighbouring pixels to pick a mip level from. Rays from neighbouring pixels can hit different materials, so the texture's heap index differs between them: that's fine, since descriptor heap access is non-uniform unless the SPIR-V marks it uniform, and Slang doesn't.
 float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint triangle, float2 barycentrics) {
     const uint first = draw.first_index + triangle * 3;
     const Vertex v0 = frame.vertices[int(frame.indices[first]) + draw.vertex_offset];
@@ -1601,15 +1446,10 @@ float candidate_alpha(FrameData *frame, DrawData draw, Material material, uint t
     return material.base_color_factor.a * vertex_alpha * texture.SampleLevel(sampler, uv, 0.0).a;
 }
 
-// How much of a light gets from `origin` to `distance` along `direction`: 0
-// when something solid is in the way, otherwise the share every see-through
-// layer on the way lets through. A ray query walks the TLAS and BLASes:
+// How much of a light gets from `origin` to `distance` along `direction`: 0 when something solid is in the way, otherwise the share every see-through layer on the way lets through. A ray query walks the TLAS and BLASes:
 //   - an opaque triangle ends it at once: any blocking hit will do,
-//   - a masked one comes back as a candidate, which blocks where its alpha
-//     reaches the cutoff, and lets the light through its cut-out texels,
-//   - a blended one comes back as a candidate that lets 1 - alpha of the
-//     light through, as the transparency pass's reveal sum does. It never
-//     ends the ray: the light goes on, dimmed, to whatever is behind.
+//   - a masked one comes back as a candidate, which blocks where its alpha reaches the cutoff, and lets the light through its cut-out texels,
+//   - a blended one comes back as a candidate that lets 1 - alpha of the light through, as the transparency pass's reveal sum does. It never ends the ray: the light goes on, dimmed, to whatever is behind.
 float light_visibility(FrameData *frame, float3 origin, float3 direction, float distance) {
     const RaytracingAccelerationStructure scene = RaytracingAccelerationStructure(frame.scene_tlas);
 
@@ -1644,20 +1484,14 @@ float light_visibility(FrameData *frame, float3 origin, float3 direction, float 
     return query.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : transmittance;
 }
 
-// Where a ray toward the light `l` starts: off the surface on the light's
-// side, along `face_normal`, the triangle's own flat normal. An interpolated
-// or normal-mapped normal can disagree about which side the light is on.
+// Where a ray toward the light `l` starts: off the surface on the light's side, along `face_normal`, the triangle's own flat normal. An interpolated or normal-mapped normal can disagree about which side the light is on.
 //
-// The TLAS's space is measured from its origin cell, near the camera, not
-// from the camera itself (acceleration.h): tlas_offset, the camera's
-// position in it, moves the camera-relative position there first, so the
-// offset grows with the coordinates the ray is really traced at.
+// The TLAS's space is measured from its origin cell, near the camera, not from the camera itself (acceleration.h): tlas_offset, the camera's position in it, moves the camera-relative position there first, so the offset grows with the coordinates the ray is really traced at.
 float3 shadow_ray_origin(FrameData *frame, float3 position, float3 face_normal, float3 l) {
     return offset_ray_origin(position + frame.tlas_offset, dot(face_normal, l) >= 0.0 ? face_normal : -face_normal);
 }
 
-// shade(), times how much of the light gets through. A ray is only traced
-// when the light could reach the surface at all.
+// shade(), times how much of the light gets through. A ray is only traced when the light could reach the surface at all.
 float3 shade_shadowed(
     Surface surface, FrameData *frame, float3 position, float3 face_normal,
     float3 l, float3 illuminance, float distance
@@ -1670,13 +1504,9 @@ float3 shade_shadowed(
     return reaching > 0.0 ? shade(surface, l, illuminance) * reaching : float3(0.0);
 }
 
-// --- Lights --------------------------------------------------------------------
+// Lights
 
-// The direction toward a light, how far away it is, and the illuminance it
-// gives here, following KHR_lights_punctual. Point and spot lights fade with
-// the square of the distance, then smoothly to nothing at `range`; spot
-// lights also fade from the inner cone to the outer one. A directional
-// light is infinitely far away.
+// The direction toward a light, how far away it is, and the illuminance it gives here, following KHR_lights_punctual. Point and spot lights fade with the square of the distance, then smoothly to nothing at `range`; spot lights also fade from the inner cone to the outer one. A directional light is infinitely far away.
 float3 punctual_light(FrameData *frame, Light light, float3 position, out float3 l, out float distance) {
     if (light.type == light_directional) {
         l = -light.direction;
@@ -1704,12 +1534,11 @@ float3 punctual_light(FrameData *frame, Light light, float3 position, out float3
     return light.intensity * attenuation;
 }
 
-// --- Image-based lighting ------------------------------------------------------
+// Image-based lighting
 
 // Light from the whole sky at once, from what environment.slang prepared.
 
-// The sky's irradiance on a surface facing `n`, in lux: its nine spherical
-// harmonics coefficients, each weighted by its basis function at `n`.
+// The sky's irradiance on a surface facing `n`, in lux: its nine spherical harmonics coefficients, each weighted by its basis function at `n`.
 float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     const float basis[9] = {
         0.282095,
@@ -1731,12 +1560,9 @@ float3 sky_irradiance(EnvironmentInfo *environment, float3 n) {
     return max(irradiance, 0.0);
 }
 
-// --- Ambient occlusion -------------------------------------------------------------
+// Ambient occlusion
 
-// The rotation that turns `from` into `to`, applied to `v`: Rodrigues'
-// formula rewritten without angles (Moller and Hughes 1999), from the cross
-// and dot products alone. `from` and `to` are never opposite here: the bent
-// normal averages directions in the hemisphere around the normal.
+// The rotation that turns `from` into `to`, applied to `v`: Rodrigues' formula rewritten without angles (Moller and Hughes 1999), from the cross and dot products alone. `from` and `to` are never opposite here: the bent normal averages directions in the hemisphere around the normal.
 float3 rotate_from_to(float3 from, float3 to, float3 v) {
     const float3 axis = cross(from, to);
     const float c = dot(from, to);
@@ -1748,10 +1574,7 @@ float3 rotate_from_to(float3 from, float3 to, float3 v) {
     return v * c + cross(axis, v) + axis * (dot(axis, v) / (1.0 + c));
 }
 
-// Ambient occlusion counts light that's blocked, but light also bounces off
-// the occluders, and more so the brighter they are. Jimenez et al.'s fit,
-// from the same GTAO paper, brightens the visibility by the surface's own
-// albedo, standing in for its surroundings'.
+// Ambient occlusion counts light that's blocked, but light also bounces off the occluders, and more so the brighter they are. Jimenez et al.'s fit, from the same GTAO paper, brightens the visibility by the surface's own albedo, standing in for its surroundings'.
 float3 multi_bounce(float visibility, float3 albedo) {
     const float3 a = 2.0404 * albedo - 0.3324;
     const float3 b = -4.7951 * albedo + 0.6417;
@@ -1759,23 +1582,14 @@ float3 multi_bounce(float visibility, float3 albedo) {
     return max(float3(visibility), ((visibility * a + b) * visibility + c) * visibility);
 }
 
-// How much of the sky's reflection a partly occluded point still sees
-// (Lagarde and de Rousiers 2014): smooth surfaces, looking straight on, keep
-// more of it than occlusion alone suggests; rough ones lose about as much.
-// Its roughness is GGX's alpha, roughness squared.
+// How much of the sky's reflection a partly occluded point still sees (Lagarde and de Rousiers 2014): smooth surfaces, looking straight on, keep more of it than occlusion alone suggests; rough ones lose about as much. Its roughness is GGX's alpha, roughness squared.
 float specular_occlusion(float n_dot_v, float visibility, float alpha) {
     return saturate(pow(n_dot_v + visibility, exp2(-16.0 * alpha - 1.0)) - 1.0 + visibility);
 }
 
 // The sky's light reflected toward the viewer.
-//   - Diffuse: a Lambertian surface reflects base color / pi of the
-//     irradiance falling on it, read along `irradiance_normal` (the bent
-//     normal: the direction the open sky lies in), dimmed by the visibility
-//     and brightened again by multiple bounces.
-//   - Specular, the "split sum": the light (the prefiltered sky along the
-//     reflected ray, at the mip level for this roughness) times how much
-//     the BRDF reflects overall (the table, as a scale and bias on F0),
-//     dimmed by the specular occlusion.
+//   - Diffuse: a Lambertian surface reflects base color / pi of the irradiance falling on it, read along `irradiance_normal` (the bent normal: the direction the open sky lies in), dimmed by the visibility and brightened again by multiple bounces.
+//   - Specular, the "split sum": the light (the prefiltered sky along the reflected ray, at the mip level for this roughness) times how much the BRDF reflects overall (the table, as a scale and bias on F0), dimmed by the specular occlusion.
 //   - A roughness-aware Fresnel term splits the light between the two.
 float3 shade_environment(Surface surface, FrameData *frame, float roughness, float visibility, float3 irradiance_normal) {
     const float n_dot_v = max(dot(surface.normal, surface.view), 1e-4);
@@ -1801,17 +1615,9 @@ float3 shade_environment(Surface surface, FrameData *frame, float roughness, flo
     return diffuse + specular;
 }
 
-// --- Energy compensation -------------------------------------------------------------
+// Energy compensation
 
-// The GGX specular reflection counts light that bounces once off the
-// microfacets; on a rough surface, much of it bounces again, between them,
-// and still leaves. Without it, rough metals come out too dark: a fully
-// rough white metal reflects only about 40% of the light. The BRDF
-// table's two numbers, at f0 = 1, add up to E, the share that one bounce
-// leaves with; scaling the reflection by 1 + f0 (1 / E - 1) puts the rest
-// back, in proportion to how much the surface reflects at all. Kulla and
-// Conty's (2017) idea, in Turquin's (2019) simpler scaled form, which
-// Filament uses.
+// The GGX specular reflection counts light that bounces once off the microfacets; on a rough surface, much of it bounces again, between them, and still leaves. Without it, rough metals come out too dark: a fully rough white metal reflects only about 40% of the light. The BRDF table's two numbers, at f0 = 1, add up to E, the share that one bounce leaves with; scaling the reflection by 1 + f0 (1 / E - 1) puts the rest back, in proportion to how much the surface reflects at all. Kulla and Conty's (2017) idea, in Turquin's (2019) simpler scaled form, which Filament uses.
 float3 energy_compensation(FrameData *frame, float3 base_color, float metallic, float roughness, float n_dot_v) {
     const SamplerState clamped = SamplerState.Handle(uint2(frame.clamp_sampler, 0));
     const Texture2D brdf_lut = Texture2D.Handle(uint2(frame.brdf_lut, 0));
@@ -1820,41 +1626,20 @@ float3 energy_compensation(FrameData *frame, float3 base_color, float metallic, 
     return 1.0 + f0 * (1.0 / max(brdf.x + brdf.y, 1e-3) - 1.0);
 }
 
-// --- Specular antialiasing -----------------------------------------------------------
+// Specular antialiasing
 
-// A pixel shows the average of the light reflected over its whole footprint
-// on the surface, but it's shaded at one point. Where the normal changes
-// faster than a pixel can follow, a highlight smaller than the pixel lands
-// on the sample in one frame and misses it in the next: sparkles that crawl
-// as the camera moves. That happens in two places:
+// A pixel shows the average of the light reflected over its whole footprint on the surface, but it's shaded at one point. Where the normal changes faster than a pixel can follow, a highlight smaller than the pixel lands on the sample in one frame and misses it in the next: sparkles that crawl as the camera moves. That happens in two places:
 //   - a surface curving, or seen from far away, faster than the pixels
 //   - a normal map's bumps, smaller than a texel of the mip being read
-// Both mean the normals within the pixel spread out. To the BRDF, that
-// spread is roughness: alpha squared is twice the variance of the
-// microfacet slopes, exactly for Beckmann's distribution and closely enough
-// for GGX's (Kaplanyan et al. 2016), so the spread's variance adds to it. A
-// rougher, wider highlight that every pixel catches part of.
+// Both mean the normals within the pixel spread out. To the BRDF, that spread is roughness: alpha squared is twice the variance of the microfacet slopes, exactly for Beckmann's distribution and closely enough for GGX's (Kaplanyan et al. 2016), so the spread's variance adds to it. A rougher, wider highlight that every pixel catches part of.
 
-// The variance of the pixel filter, in pixels squared, and the most the
-// curvature may add: differences between neighbouring pixels estimate the
-// change only roughly, and the cap keeps a bad estimate from turning a
-// mirror into chalk (Kaplanyan et al. 2016; Tokuyoshi and Kaplanyan 2021).
+// The variance of the pixel filter, in pixels squared, and the most the curvature may add: differences between neighbouring pixels estimate the change only roughly, and the cap keeps a bad estimate from turning a mirror into chalk (Kaplanyan et al. 2016; Tokuyoshi and Kaplanyan 2021).
 static const float pixel_filter_variance = 0.15915494;  // 1 / (2 pi)
 static const float curvature_limit = 0.18;
 
 // GGX's alpha, widened by both spreads.
-//   Curvature: how fast the vertex normal changes from pixel to pixel,
-//      both ways, gives the variances of the normals across the pixel's
-//      footprint along the two screen axes. Their sum bounds the largest
-//      variance in any direction, so a round highlight widened by it is
-//      wide enough (Tokuyoshi and Kaplanyan 2021, equation 13, their
-//      conservative isotropic form). The vertex normal, as Filament and
-//      Unity's HDRP use: the surface's shape. The map's bumps are the
-//      other spread; their pixel-to-pixel differences would add a noisy,
-//      flickering estimate on top.
-//   Normal map: the spread its mips measured (Toksvig 2005, mips.slang),
-//      as the standard deviation s of the normals' angle; its variance s^2,
-//      twice, like the curvature's.
+//   Curvature: how fast the vertex normal changes from pixel to pixel, both ways, gives the variances of the normals across the pixel's footprint along the two screen axes. Their sum bounds the largest variance in any direction, so a round highlight widened by it is wide enough (Tokuyoshi and Kaplanyan 2021, equation 13, their conservative isotropic form). The vertex normal, as Filament and Unity's HDRP use: the surface's shape. The map's bumps are the other spread; their pixel-to-pixel differences would add a noisy, flickering estimate on top.
+//   Normal map: the spread its mips measured (Toksvig 2005, mips.slang), as the standard deviation s of the normals' angle; its variance s^2, twice, like the curvature's.
 float antialiased_alpha(float alpha, float3 geometric_normal, float map_spread) {
     const float3 dn_dx = ddx(geometric_normal);
     const float3 dn_dy = ddy(geometric_normal);
@@ -1864,13 +1649,9 @@ float antialiased_alpha(float alpha, float3 geometric_normal, float map_spread) 
     return sqrt(saturate(alpha * alpha + min(curvature, curvature_limit) + bumps));
 }
 
-// --- Aerial perspective --------------------------------------------------------------
+// Aerial perspective
 
-// The light the air between the camera and `position` (camera-relative)
-// adds, and, in `transmittance`, the share of the surface's light it lets
-// through: the aerial perspective volumes, at the point's place on the
-// screen and its distance. Closer than the first slice's far edge, a share
-// of the first slice's air.
+// The light the air between the camera and `position` (camera-relative) adds, and, in `transmittance`, the share of the surface's light it lets through: the aerial perspective volumes, at the point's place on the screen and its distance. Closer than the first slice's far edge, a share of the first slice's air.
 float3 aerial_perspective(FrameData *frame, float3 position, out float3 transmittance) {
     const float4 clip = mul(frame.view_projection, float4(position, 1.0));
     const float2 screen = clip.xy / clip.w * 0.5 + 0.5;
@@ -1887,12 +1668,9 @@ float3 aerial_perspective(FrameData *frame, float3 position, out float3 transmit
     return inscatter * first_slice_share;
 }
 
-// --- Depth and normal prepass ------------------------------------------------------
+// Depth and normal prepass
 
-// The interpolated vertex normal, facing the viewer on a double-sided
-// material's back face; flat when the file has no normals. This is the
-// surface at the scale the mesh describes it, which ambient occlusion
-// searches against: a normal map's detail isn't in the depth buffer.
+// The interpolated vertex normal, facing the viewer on a double-sided material's back face; flat when the file has no normals. This is the surface at the scale the mesh describes it, which ambient occlusion searches against: a normal map's detail isn't in the depth buffer.
 float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
     float3 normal = input.normal;
 
@@ -1904,10 +1682,7 @@ float3 vertex_normal(VertexOutput input, Material material, bool front_face) {
     return material.double_sided != 0 && !front_face ? -normal : normal;
 }
 
-// The prepass draws every opaque and masked surface first, writing only its
-// depth and its vertex normal, octahedrally encoded. Masked surfaces cut out
-// their transparent texels here too, so the depth buffer holds exactly the
-// surfaces the lighting pass will shade.
+// The prepass draws every opaque and masked surface first, writing only its depth and its vertex normal, octahedrally encoded. Masked surfaces cut out their transparent texels here too, so the depth buffer holds exactly the surfaces the lighting pass will shade.
 [shader("fragment")]
 float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
     FrameData *frame = push.frame;
@@ -1923,18 +1698,14 @@ float2 prepassMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Ta
     return encode_octahedral(vertex_normal(input, material, front_face));
 }
 
-// --- Shading a fragment ------------------------------------------------------
+// Shading a fragment
 
-// The surface at this fragment: its exposed radiance (or one input, in a
-// debug view), and its alpha. The lighting pass writes it as it is; the
-// transparency pass adds it into its sums.
-// `front_face`: whether this triangle faces the camera.
+// The surface at this fragment: its exposed radiance (or one input, in a debug view), and its alpha. The lighting pass writes it as it is; the transparency pass adds it into its sums. `front_face`: whether this triangle faces the camera.
 float4 shade_fragment(VertexOutput input, bool front_face) {
     FrameData *frame = push.frame;
     const Material material = frame.materials[frame.draws[input.draw_index].material];
 
-    // Base color: factor x texture x vertex color. sRGB textures are decoded
-    // to linear by the sampler, so all three are linear.
+    // Base color: factor x texture x vertex color. sRGB textures are decoded to linear by the sampler, so all three are linear.
     float4 base_color = material.base_color_factor * sample_slot(material.base_color, input) * input.color;
 
     if (alpha_mode == alpha_opaque) {
@@ -1952,8 +1723,7 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
     const float metallic = material.metallic_factor * metallic_roughness.b;
     const float roughness = material.roughness_factor * metallic_roughness.g;
 
-    // Occlusion darkens creases that ambient light can't reach. Strength
-    // blends between no effect (0) and the full map (1).
+    // Occlusion darkens creases that ambient light can't reach. Strength blends between no effect (0) and the full map (1).
     const float occlusion = 1.0 + material.occlusion_strength * (sample_slot(material.occlusion, input).r - 1.0);
 
     const float3 emissive = material.emissive_factor * sample_slot(material.emissive, input).rgb;
@@ -1961,20 +1731,12 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
     float map_spread;
     const float3 normal = surface_normal(input, material, front_face, frame.view != view_vertex_normal, map_spread);
 
-    // Roughness, widened where the normals spread within the pixel. A
-    // perfectly smooth surface would reflect a punctual light from a single
-    // point, too small for any pixel to catch; a floor on roughness keeps
-    // highlights visible.
+    // Roughness, widened where the normals spread within the pixel. A perfectly smooth surface would reflect a punctual light from a single point, too small for any pixel to catch; a floor on roughness keeps highlights visible.
     const float floored = max(roughness, 0.045);
     const float alpha = antialiased_alpha(floored * floored, vertex_normal(input, material, front_face), map_spread);
     const float shading_roughness = sqrt(alpha);
 
-    // Ambient occlusion, from the AO pass's image at this pixel. It combines
-    // with the occlusion map by min, not product: both estimate the same
-    // thing, at two scales. The bent normal is a deflection from the vertex
-    // normal; turning the shading normal by the same deflection keeps the
-    // normal map's detail. See-through surfaces aren't in the prepass, so
-    // the image there holds whatever is behind them: they use the map alone.
+    // Ambient occlusion, from the AO pass's image at this pixel. It combines with the occlusion map by min, not product: both estimate the same thing, at two scales. The bent normal is a deflection from the vertex normal; turning the shading normal by the same deflection keeps the normal map's detail. See-through surfaces aren't in the prepass, so the image there holds whatever is behind them: they use the map alone.
     const float4 gtao = Texture2D.Handle(uint2(frame.ambient_occlusion, 0)).Load(int3(int2(input.position.xy), 0));
     float visibility = occlusion;
     float3 irradiance_normal = normal;
@@ -1984,8 +1746,7 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         irradiance_normal = normalize(rotate_from_to(vertex_normal(input, material, front_face), gtao.xyz, normal));
     }
 
-    // The debug views show one input each. Directions are shown as colors:
-    // each component's -1..1 mapped to 0..1.
+    // The debug views show one input each. Directions are shown as colors: each component's -1..1 mapped to 0..1.
     switch (frame.view) {
         case view_base_color: return base_color;
         case view_normal:
@@ -1998,11 +1759,7 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         default: break;
     }
 
-    // The triangle's flat normal, from how the position changes across
-    // neighbouring pixels: exact up to rounding, since a triangle is flat.
-    // Shadow rays start off the surface along it. A triangle seen exactly
-    // edge-on has no area on screen, and no such normal: then the shading
-    // normal stands in, rather than a division by zero.
+    // The triangle's flat normal, from how the position changes across neighbouring pixels: exact up to rounding, since a triangle is flat. Shadow rays start off the surface along it. A triangle seen exactly edge-on has no area on screen, and no such normal: then the shading normal stands in, rather than a division by zero.
     const float3 face_cross = cross(ddy(input.relative_position), ddx(input.relative_position));
     const float3 face_normal = dot(face_cross, face_cross) > 1e-24 ? normalize(face_cross) : normal;
 
@@ -2036,14 +1793,10 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         radiance += shade_shadowed(surface, frame, input.relative_position, face_normal, l, illuminance, distance);
     }
 
-    // Indirect light from the sky, darkened by occlusion. Ambient occlusion
-    // only ever reaches this indirect light: the sun and the lights are
-    // direct, and only a shadow can block them.
+    // Indirect light from the sky, darkened by occlusion. Ambient occlusion only ever reaches this indirect light: the sun and the lights are direct, and only a shadow can block them.
     radiance += shade_environment(surface, frame, shading_roughness, visibility, irradiance_normal);
 
-    // The air between the camera and the surface, with the simulated sky:
-    // it dims the surface's light, emission included, and adds its own. The
-    // photograph has no air to go with it.
+    // The air between the camera and the surface, with the simulated sky: it dims the surface's light, emission included, and adds its own. The photograph has no air to go with it.
     float3 transmittance = 1.0;
     float3 inscatter = 0.0;
 
@@ -2051,52 +1804,30 @@ float4 shade_fragment(VertexOutput input, bool front_face) {
         inscatter = aerial_perspective(frame, input.relative_position, transmittance);
     }
 
-    // Exposure scales nits into the tone mapper's range here, before the
-    // 16-bit HDR image could overflow. glTF defines emission in nits, but, as
-    // its spec notes many engines do, we take it as already exposed: an
-    // emissive value of 1 shows as near-white, whatever the exposure.
+    // Exposure scales nits into the tone mapper's range here, before the 16-bit HDR image could overflow. glTF defines emission in nits, but, as its spec notes many engines do, we take it as already exposed: an emissive value of 1 shows as near-white, whatever the exposure.
     return float4((radiance * transmittance + inscatter) * frame.exposure + emissive * transmittance, base_color.a);
 }
 
-// --- Fragment shaders ----------------------------------------------------------
+// Fragment shaders
 
-// The lighting pass, for opaque and masked surfaces.
-// SV_Target: the value written to color attachment 0.
-// SV_IsFrontFace: whether this triangle faces the camera.
+// The lighting pass, for opaque and masked surfaces. SV_Target: the value written to color attachment 0. SV_IsFrontFace: whether this triangle faces the camera.
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input, bool front_face : SV_IsFrontFace) : SV_Target {
     return shade_fragment(input, front_face);
 }
 
-// --- Weighted blended transparency ---------------------------------------------
+// Weighted blended transparency
 
-// The transparency pass, for blended surfaces (McGuire and Bavoil 2013,
-// "Weighted Blended Order-Independent Transparency"). Blending one surface
-// over another depends on which is in front, so blended surfaces would have
-// to be sorted back to front, per pixel. Instead, every fragment adds into
-// two sums, in any order:
-//   accum   (premultiplied color, coverage) times a weight that falls with
-//           distance, added up
-//   reveal  the share of the scene that shows through: 1, times every
-//           fragment's (1 - coverage)
-// The composite (composite.slang) divides accum's color by its coverage,
-// a weighted average of the layers, and lays it over the scene by
-// 1 - reveal. One layer comes out as blending would draw it, to 16-bit
-// precision; where layers overlap, the nearer one counts for more.
+// The transparency pass, for blended surfaces (McGuire and Bavoil 2013, "Weighted Blended Order-Independent Transparency"). Blending one surface over another depends on which is in front, so blended surfaces would have to be sorted back to front, per pixel. Instead, every fragment adds into two sums, in any order:
+//   accum   (premultiplied color, coverage) times a weight that falls with distance, added up
+//   reveal  the share of the scene that shows through: 1, times every fragment's (1 - coverage)
+// The composite (composite.slang) divides accum's color by its coverage, a weighted average of the layers, and lays it over the scene by 1 - reveal. One layer comes out as blending would draw it, to 16-bit precision; where layers overlap, the nearer one counts for more.
 struct TransparentOutput {
     float4 accum : SV_Target0;
     float reveal : SV_Target1;
 };
 
-// The weight: McGuire and Bavoil's equation 7, tuned for 16-bit float sums
-// and distances from 0.1 m to 500 m. Past a few hundred metres it bottoms
-// out at its floor, so distant layers that overlap count equally. It falls
-// steeply with the distance in front of the camera, so where layers overlap,
-// the nearest dominates; the
-// clamp keeps it between 1e-2 and 3e3. Colors are clamped to
-// transparent_max, which tone mapping already shows as nearly white: one
-// fragment then adds at most 4 x 3e3 = 12000, well below the 65504 a
-// 16-bit float holds, so many layers can stack up before the sums overflow.
+// The weight: McGuire and Bavoil's equation 7, tuned for 16-bit float sums and distances from 0.1 m to 500 m. Past a few hundred metres it bottoms out at its floor, so distant layers that overlap count equally. It falls steeply with the distance in front of the camera, so where layers overlap, the nearest dominates; the clamp keeps it between 1e-2 and 3e3. Colors are clamped to transparent_max, which tone mapping already shows as nearly white: one fragment then adds at most 4 x 3e3 = 12000, well below the 65504 a 16-bit float holds, so many layers can stack up before the sums overflow.
 static const float transparent_max = 4.0;
 
 float transparent_weight(float coverage, float view_depth) {
@@ -2110,8 +1841,7 @@ TransparentOutput transparentMain(VertexOutput input, bool front_face : SV_IsFro
     const float4 color = shade_fragment(input, front_face);
     const float coverage = saturate(color.a);
 
-    // The distance in front of the camera, along its view direction: the
-    // clip-space w a perspective projection leaves.
+    // The distance in front of the camera, along its view direction: the clip-space w a perspective projection leaves.
     const float view_depth = mul(push.frame.view_projection, float4(input.relative_position, 1.0)).w;
     const float weight = transparent_weight(coverage, view_depth);
 
