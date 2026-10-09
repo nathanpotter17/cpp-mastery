@@ -2,11 +2,11 @@
 
 By the end of this chapter, the sky's light no longer reaches into places it can't. The insides of corners, the gaps behind curtains, the undersides of arches and the ground where a column meets it all darken by how much of the sky they can see. This is **ambient occlusion** (AO), and it's what makes the image-based lighting from Chapter 8 look grounded instead of glowing.
 
-The method is **ground-truth ambient occlusion** (GTAO, Jimenez et al. 2016). It works from the depth buffer and the surfaces' normals, in a compute shader, every frame. For each pixel it searches the depth buffer around it for the **horizon** in a few directions: the highest point that blocks the sky. The visible part of the sky between the horizons is then integrated exactly, with the same cosine weighting the irradiance uses. The result is a **visibility**, from 0 (fully enclosed) to 1 (open sky), and a **bent normal**: the average direction of the open sky.
+The method is **ground-truth ambient occlusion** (GTAO, Jimenez et al. 2016). It works from the depth buffer and the surfaces' normals, in compute shaders, every frame, at half resolution. For each pixel it searches the depth buffer around it for the **horizon** in a few directions: the highest point that blocks the sky. The visible part of the sky between the horizons is then integrated exactly, with the same cosine weighting the irradiance uses. The result is a **visibility**, from 0 (fully enclosed) to 1 (open sky), and a **bent normal**: the average direction of the open sky.
 
 The frame now runs in four passes:
 1. **a depth prepass:** every solid surface's depth and vertex normal, with no shading,
-2. **ambient occlusion:** the horizon search, then a blur, in compute shaders,
+2. **ambient occlusion:** at half resolution, the horizon search and a blur, then back to full resolution, in compute shaders,
 3. **the lighting:** the full shading from Chapter 8, against the prepass's depth, now reading the AO,
 4. **tone mapping,** as before.
 
@@ -17,13 +17,19 @@ This chapter builds on [Chapter 8](08-image-based-lighting.md).
 ## 9.1 The new images: `swapchain.h`, `swapchain.cpp`
 
 ### Why
-AO is computed from the depth of the whole frame, so the depth has to exist before any surface is shaded. Until now, depth was only a by-product of drawing. It was written and tested while shading, then thrown away. It now gets its own pass, and four images to go with it.
+AO is computed from the depth of the whole frame, so the depth has to exist before any surface is shaded. Until now, depth was only a by-product of drawing. It was written and tested while shading, then thrown away. It now gets its own pass, with a normals image beside it, and ambient occlusion gets images of its own: most at half resolution, where it does its work.
 
 ### How
 - **The depth buffer** is now also **sampled**: the AO shader reads it like a texture. Its usage gains `eSampled`.
 - **A normals image,** `R16G16Sfloat`. The search needs each pixel's surface direction as well as its depth. A unit vector fits in two 16-bit numbers with **octahedral encoding** (9.3), half the size of three.
-- **Two AO images,** `R16G16B16A16Sfloat`: the bent normal in RGB, the visibility in A. Compute shaders write them as **storage images** and the lighting pass samples them, so both usages are set. Two are needed because the blur reads one while writing the other.
-- **All are the window's size** and are rebuilt with the swapchain. Each is written from scratch every frame before anything reads it, so, like the HDR image, frames in flight can share them.
+- **The AO image,** `R16G16B16A16Sfloat`, the window's size: the bent normal in RGB, the visibility in A. A compute shader writes it as a **storage image** and the lighting pass samples it, so both usages are set.
+- **Four working images at half the size,** rounded up, written and read by compute shaders only, as storage images:
+  - `ao_depth`, `R32Sfloat`: each 2 × 2 block's nearest distance in front of the camera,
+  - `ao_normals`, `R16G16Sfloat`: that surface's normal,
+  - `ao_raw` and `ao_blur`, `R16G16B16A16Sfloat`: the search's result, and the blur's halfway point. The blur reads one while writing the other.
+- **Why half resolution:** the search reads dozens of depths per pixel. At full resolution the pass cost about 2.5 ms a frame, 2 ms of it the search, at 1920 × 1080 on the machine this was written on, an RTX 5070 Laptop GPU. At half, with a quarter of the pixels and smaller images to read, the whole pass takes about 0.8 ms, and the result is nearly the same (9.6).
+- **Storage images without a declared format:** the shaders read these images with no format named in the SPIR-V, which needs each format to support it (`VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT`). The GPUs this engine runs on do; an engine meant for any GPU would check it when choosing one.
+- **All are rebuilt with the swapchain.** Each is written from scratch every frame before anything reads it, so, like the HDR image, frames in flight can share them.
 
 ### Code
 `game-engine/src/includes/swapchain.h`:
@@ -49,6 +55,10 @@ constexpr vk::Format normal_format = vk::Format::eR16G16Sfloat;
 // Ambient occlusion: the bent normal in RGB and the visibility in A.
 constexpr vk::Format ao_format = vk::Format::eR16G16B16A16Sfloat;
 
+// Ambient occlusion's half-resolution input: each 2 x 2 block's nearest
+// distance in front of the camera. Its normal uses normal_format.
+constexpr vk::Format ao_depth_format = vk::Format::eR32Sfloat;
+
 // The window's images, plus what we need per image to draw into them.
 // Members are destroyed bottom-up, so the views and semaphores go before
 // the swapchain that owns the images.
@@ -70,12 +80,20 @@ struct Swapchain {
     //   depth    the depth prepass writes it; ambient occlusion and the
     //            lighting pass then read it
     //   normals  the prepass's normals, for ambient occlusion
-    //   ao       ambient occlusion, written and blurred by compute shaders
-    //   ao_blur  the blur's halfway point
+    //   ao       ambient occlusion, written by a compute shader, read by the
+    //            lighting pass
     //   hdr      the lit scene, which tone mapping writes to the swapchain image
+    // and, at half the size, rounded up, ambient occlusion's working images:
+    //   ao_depth    each 2 x 2 block's nearest distance in front of the camera
+    //   ao_normals  that surface's normal
+    //   ao_raw      the horizon search's result, and the blur's
+    //   ao_blur     the blur's halfway point
     Image depth;
     Image normals;
     Image ao;
+    Image ao_depth;
+    Image ao_normals;
+    Image ao_raw;
     Image ao_blur;
     Image hdr;
 };
@@ -167,11 +185,22 @@ Swapchain build(
     swapchain.normals = create_image(device, gpu, swapchain.extent, normal_format,
         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eColor);
 
-    // Written by compute shaders (storage), then read by the lighting pass.
-    for (Image* image : {&swapchain.ao, &swapchain.ao_blur}) {
-        *image = create_image(device, gpu, swapchain.extent, ao_format,
-            vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eColor);
+    // Ambient occlusion works at half resolution, rounded up, and writes its
+    // result at full resolution. Compute shaders write all of them (storage);
+    // the lighting pass samples the full-resolution one.
+    const vk::Extent2D half{(swapchain.extent.width + 1) / 2, (swapchain.extent.height + 1) / 2};
+    swapchain.ao_depth = create_image(device, gpu, half, ao_depth_format,
+        vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor);
+    swapchain.ao_normals = create_image(device, gpu, half, normal_format,
+        vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor);
+
+    for (Image* image : {&swapchain.ao_raw, &swapchain.ao_blur}) {
+        *image = create_image(device, gpu, half, ao_format,
+            vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor);
     }
+
+    swapchain.ao = create_image(device, gpu, swapchain.extent, ao_format,
+        vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eColor);
 
     // Drawn into, then read by the tone-mapping shader.
     swapchain.hdr = create_image(device, gpu, swapchain.extent, hdr_format,
@@ -334,11 +363,12 @@ The lighting pass needs to find the AO image, and the AO shaders need their own 
 ### How
 - **`FrameData`** gains the AO image's heap slot and an on/off flag, at offset 240. `FrameData` grows to 248 bytes, still with no padding.
 - **`View::ambient_occlusion`** is the ninth view: the visibility as gray.
-- **`AoPushData`**, 48 bytes, serves all three AO dispatches:
+- **`AoPushData`**, 56 bytes, serves all four AO steps:
   - the frame's address, for the camera matrices,
-  - the depth and normals slots,
+  - the full-resolution depth and normals slots, sampled,
+  - the half-resolution depth and normals slots, as storage images,
   - `source` and `target`, the storage images a step reads and writes,
-  - the image size, the search radius in meters, the slice and step counts, and the blur's axis.
+  - the full-resolution size, the search radius in meters, the slice and step counts, and the blur's axis.
 - **One push block per shader.** `shared.slangh` declared the scene shaders' push block, `ConstantBuffer<PushData> push`. Now `ao.slang` includes the file too, with its own push data, and a shader can only have one push block. So each shader declares its own: `mesh.slang` and `background.slang` declare `PushData`, and `ao.slang` declares `AoPushData`.
 - **Octahedral encoding** (Meyer et al. 2010) stores a unit vector in two numbers:
   - Divide the vector by |x| + |y| + |z|. It now lies on an **octahedron**, a diamond with its six points on the axes.
@@ -533,7 +563,7 @@ struct FrameData {
     std::uint32_t clamp_sampler;        // sampler heap index: trilinear, clamped to the edge
     std::uint32_t specular_mips;        // mip levels of specular_cube: roughness 0 to 1
     float sun_angular_radius;           // radians: half the sun's apparent width
-    std::uint32_t ambient_occlusion;    // resource heap slot: the blurred GTAO image
+    std::uint32_t ambient_occlusion;    // resource heap slot: the GTAO image, full resolution
     std::uint32_t ao_enabled;           // 0: ignore it, to compare
 };
 
@@ -588,16 +618,18 @@ static_assert(sizeof(EnvironmentPushData) == 48);
 static_assert(offsetof(EnvironmentPushData, sun_direction) == 16);
 static_assert(offsetof(EnvironmentPushData, size) == 32);
 
-// The ambient occlusion compute shaders' push data (ao.slang). Each dispatch
-// reads `source` and writes `target`, both storage images, except the GTAO
-// pass, which reads the depth and normals and only writes.
+// The ambient occlusion compute shaders' push data (ao.slang), the same for
+// all four steps. The half-resolution images and `source` and `target` are
+// storage images; each step reads and writes the ones it needs.
 struct AoPushData {
     vk::DeviceAddress frame = 0;   // this frame's FrameData
     std::uint32_t depth = 0;       // resource heap slot: the depth buffer, sampled
     std::uint32_t normals = 0;     // resource heap slot: the prepass's normals, sampled
-    std::uint32_t source = 0;      // resource heap slot: what the blur reads (storage)
+    std::uint32_t ao_depth = 0;    // resource heap slot: half resolution, nearest distance (storage)
+    std::uint32_t ao_normals = 0;  // resource heap slot: half resolution, its normal (storage)
+    std::uint32_t source = 0;      // resource heap slot: what this step reads (storage)
     std::uint32_t target = 0;      // resource heap slot: what this step writes (storage)
-    std::uint32_t width = 0;       // the images' size in pixels
+    std::uint32_t width = 0;       // the full-resolution images' size in pixels
     std::uint32_t height = 0;
     float radius = 0.0f;           // meters: how far around a point occluders are looked for
     std::uint32_t slices = 0;      // directions around the view vector
@@ -605,7 +637,7 @@ struct AoPushData {
     std::uint32_t blur_axis = 0;   // the blur's direction: 0 across, 1 down
 };
 
-static_assert(sizeof(AoPushData) == 48);
+static_assert(sizeof(AoPushData) == 56);
 ```
 
 `game-engine/shaders/shared.slangh`:
@@ -1546,18 +1578,23 @@ vk::raii::Pipeline create_mesh_pipeline(
 ## 9.6 Ground-truth ambient occlusion: `ao.slang`
 
 ### Why
-Ambient occlusion at a point is the share of the sky it can see, weighted by the cosine to its normal, because that's how much each direction contributes to the diffuse light. A ray tracer would shoot hundreds of rays per pixel to measure this. GTAO gets close with a few dozen depth-buffer reads, by turning the problem into a few 2D slices that each have an exact answer.
+Ambient occlusion at a point is the share of the sky it can see, weighted by the cosine to its normal, because that's how much each direction contributes to the diffuse light. A ray tracer would shoot hundreds of rays per pixel to measure this. GTAO gets close with a few dozen depth-buffer reads, by turning the problem into a few 2D slices that each have an exact answer. Done at half resolution and blended back up, it costs under a millisecond.
 
 Earlier screen-space methods sampled points around each pixel and counted how many were hidden (SSAO, Crytek 2007), or searched for horizons like GTAO but weighted the sky they found differently (HBAO, Bavoil et al. 2008). Neither result is quite the cosine-weighted visibility the lighting needs: SSAO, sampling a whole sphere, even turns open flat ground gray. GTAO's result matches path-traced AO, in its paper's own comparisons, wherever the depth buffer holds the occluders.
 
 ### How
+- **Four steps:**
+  1. **`prefilterMain`,** per 2 × 2 block of pixels: the nearest surface's distance in front of the camera, and its normal, into the half-resolution images. The nearest, so that a thin pole in front of a wall keeps its own occlusion.
+  2. **`gtaoMain`,** per half-resolution pixel: the horizon search, below.
+  3. **`blurMain`,** twice: across, then down.
+  4. **`upsampleMain`,** per full-resolution pixel: back to the window's size.
+- **Positions from rays.** Everything is measured from the camera, and a point at distance `d` in front of it, through a pixel, sits at that pixel's **ray** times `d`, the ray scaled so its forward part is 1. Rays change by the same amount from one pixel to the next, so each thread works out its own ray and the change across and down once, from the inverse view-projection, and then gets any sample's ray by adding. The rays come from points on the far plane, 500 m away: points on the near plane, 5 cm away, would lose most of their digits when the camera's world position is taken off them. A sample's position is that ray times the distance the prefilter stored: a few multiply-adds instead of a matrix per sample.
 - **Slices.** Pick a direction perpendicular to the view vector. That direction and the view vector together span a plane through the point: a **slice** of the hemisphere. We take 4 slices, spread around the view vector. (The paper takes one per pixel per frame and spreads the rest over neighbouring pixels and frames; that needs temporal accumulation, which we don't have.)
   - Directions are picked **in 3D, around the view vector,** not as angles on the screen. The integral weights every slice the same, and that's only true for directions uniform around the view vector. Angles uniform on the screen aren't, toward the screen's edges, where the view vector meets the image at a slant.
   - Each slice is a line on the screen, through the pixel. Projecting a point one radius along the slice's direction gives that line, and how many pixels the radius covers.
-- **The horizon search.** Walk along the line on both sides, 6 steps each way.
-  - At each step, rebuild the sample's world position from its depth, through the inverse view-projection.
-  - The **horizon** is the highest occluder found on that side, kept as the cosine of its angle from the view vector.
-  - Steps bunch up near the pixel (`t²`), where contact shadows are, and each is at least one pixel further out. The radius is capped at 16 pixels per step on average, so the steps never skip far over the surface.
+- **The horizon search.** Walk along the line on both sides, 6 steps each way, in half-resolution pixels.
+  - The **horizon** is the highest occluder found on that side, kept as the cosine of its angle from the view vector. It starts fully open, at the edge of the normal's hemisphere: `cos(n ± π/2)`, which is `∓sin n`, worked out once per slice.
+  - Steps bunch up near the pixel (`t²`), where contact shadows are, and each is at least one pixel further out. The radius is capped at 8 half-resolution pixels, 16 full-resolution ones, per step on average, so the steps never skip far over the surface.
 - **What a sample can't be:**
   - **Too far:** only occluders within 0.8 m count. Approaching that radius, a sample's horizon fades back toward fully open, so occluders don't pop in and out as they cross it.
   - **The same surface:** a sample that doesn't rise above the point's tangent plane can't occlude it. On a flat floor seen at a slant, rounding the slice's line to whole pixels steps a little off the slice's plane, and the floor there would otherwise count as a horizon.
@@ -1565,23 +1602,32 @@ Earlier screen-space methods sampled points around each pixel and counted how ma
 - **The exact integral.** Within a slice, measure angles from the view vector. The normal projects into the slice at some angle `n`, and its hemisphere spans `n − π/2` to `n + π/2`. The open sky in this slice runs from the negative side's horizon `h₀` to the positive side's `h₁`, clamped to that hemisphere. Integrating the cosine to the normal over that arc, weighted by `|sin h|`, each angle's share of the solid angle, has a closed form: `(cos n + 2h·sin n − cos(2h − n)) / 4` for each horizon `h`. That's the slice's visibility. The direction-weighted version of the same integral, along the view vector and along the slice, gives the arc's centroid: the slice's part of the **bent normal**.
 - **Slices are weighted** by the length of the normal's projection into them. For any direction in a slice, the cosine to the real normal is that length times the cosine to the projected normal. A slice nearly perpendicular to the normal counts for little.
 - **Noise.** A per-pixel hash offsets each pixel's slice directions and step positions. Four slices then sample different directions in neighbouring pixels, and their average approaches many slices. The noise is **fixed**: the same pixel always gets the same offsets. There's no frame-to-frame noise, which would flicker without temporal accumulation.
-- **The blur** averages that noise away: 9 taps across, then 9 down, Gaussian-weighted with a standard deviation of 2 pixels.
-  - **It respects edges:** each tap is weighted again by how close its surface is to the centre's in distance from the camera. A 5% difference is one standard deviation. A pillar's AO doesn't bleed onto the wall far behind it.
+- **The blur** averages that noise away: 9 taps across, then 9 down, at half resolution, Gaussian-weighted with a standard deviation of 2 pixels.
+  - **It respects edges:** each tap is weighted again by how close its surface is to the centre's, in distance in front of the camera, read straight from `ao_depth`. A 5% difference is one standard deviation. A pillar's AO doesn't bleed onto the wall far behind it.
   - **It blurs only the visibility.** A bent normal averaged across an edge would point into whatever it was averaged with.
+- **Back to full resolution.** Each full-resolution pixel sits among four half-resolution ones. A bilinear blend of them would smear occlusion across edges, so each is also weighted by how close its distance is to this pixel's own, with the blur's 5% rule. Where none is close, as on a thin edge no block's nearest surface kept, the one closest in depth stands in alone. The bent normals are blended the same way and normalized.
+- **What it gives up:** fine relief smaller than two pixels, like the carving on the lion's head, is a little softer than at full resolution. Lit, the two are hard to tell apart.
 - **What it can't see:** whatever isn't in the depth buffer: occluders behind the camera, off screen, or hidden behind something nearer. That's the price of working in screen space, and why the radius is kept short.
 
 ### Code
 `game-engine/shaders/ao.slang`:
 ```slang
 // Ambient occlusion: how much of the sky each visible point can see, from the
-// depth buffer and the prepass's normals. Ground-truth ambient occlusion (GTAO: Jimenez et al.
-// 2016, "Practical Real-Time Strategies for Accurate Indirect Occlusion"), in
-// the form Intel's XeGTAO gives it:
-//   gtaoMain  for a few slices of the hemisphere around the view direction,
-//             walk outward on both sides and keep the highest horizon found;
-//             the visible arc between the two horizons, integrated against
-//             the cosine, is the visibility, and its centroid the bent normal
-//   blurMain  a separable, depth-aware blur of the visibility
+// depth buffer and the prepass's normals. Ground-truth ambient occlusion
+// (GTAO: Jimenez et al. 2016, "Practical Real-Time Strategies for Accurate
+// Indirect Occlusion"), in the form Intel's XeGTAO gives it, at half
+// resolution, in four steps:
+//   prefilterMain  per 2 x 2 block of pixels: the nearest surface's distance
+//                  in front of the camera and its normal, at half resolution
+//   gtaoMain       for a few slices of the hemisphere around the view
+//                  direction, walk outward on both sides and keep the highest
+//                  horizon found; the visible arc between the two horizons,
+//                  integrated against the cosine, is the visibility, and its
+//                  centroid the bent normal
+//   blurMain       a separable, depth-aware blur of the visibility
+//   upsampleMain   back to full resolution: each pixel blends its four
+//                  nearest half-resolution results, weighted by distance and
+//                  by how close their depth is to its own
 // It's deterministic: a fixed per-pixel hash, no frame index, no accumulation.
 
 #include "shared.slangh"
@@ -1590,11 +1636,13 @@ Earlier screen-space methods sampled points around each pixel and counted how ma
 
 struct AoPushData {
     FrameData* frame;
-    uint depth;
-    uint normals;
+    uint depth;       // the depth buffer, full resolution
+    uint normals;     // the prepass's normals, full resolution
+    uint ao_depth;    // half resolution: distance in front of the camera
+    uint ao_normals;  // half resolution: the normal, octahedral
     uint source;
     uint target;
-    uint width;
+    uint width;       // full resolution
     uint height;
     float radius;
     uint slices;
@@ -1608,21 +1656,98 @@ ConstantBuffer<AoPushData> push;
 static const float pi = 3.14159265;
 static const float half_pi = 1.57079633;
 
-// --- Positions from the depth buffer -------------------------------------------
+// --- Positions ---------------------------------------------------------------------
 
-// The world position of the surface at pixel position `pixel` with depth
-// `depth`: its clip-space coordinates, back through the inverse
-// view-projection, divided by w.
-float3 world_position(FrameData* frame, float2 pixel, float depth) {
+// Everything here is measured from the camera: positions relative to it,
+// and the view direction toward it is just the negated position.
+
+// The position, relative to the camera, of the surface at full-resolution
+// pixel position `pixel` with depth `depth`: its clip-space coordinates,
+// back through the inverse view-projection, divided by w.
+float3 unproject(FrameData* frame, float2 pixel, float depth) {
     const float2 ndc = pixel / float2(push.width, push.height) * 2.0 - 1.0;
     const float4 position = mul(frame.inverse_view_projection, float4(ndc, depth, 1.0));
-    return position.xyz / position.w;
+    return position.xyz / position.w - frame.camera_position;
 }
 
-// Where a world position lands on screen, in pixels.
+// Where a position relative to the camera lands on screen, in
+// full-resolution pixels.
 float2 to_pixels(FrameData* frame, float3 position) {
-    const float4 clip = mul(frame.view_projection, float4(position, 1.0));
+    const float4 clip = mul(frame.view_projection, float4(position + frame.camera_position, 1.0));
     return (clip.xy / clip.w * 0.5 + 0.5) * float2(push.width, push.height);
+}
+
+// The direction the camera looks along: through the centre of the screen.
+// Both this and view_ray unproject at the far plane, depth 0, 500 m away:
+// a point on the near plane, 5 cm away, would lose most of its digits when
+// the camera's position is taken off it.
+float3 camera_forward(FrameData* frame) {
+    return normalize(unproject(frame, float2(push.width, push.height) * 0.5, 0.0));
+}
+
+// The ray through full-resolution pixel position `pixel`, scaled so that one
+// step along it is one metre further in front of the camera: a point at
+// distance d in front of the camera, along the ray, is at ray x d. Rays
+// through the pixels of one row or column change by the same amount from
+// pixel to pixel, so a few rays give all the others by adding.
+float3 view_ray(FrameData* frame, float2 pixel, float3 forward) {
+    const float3 far_point = unproject(frame, pixel, 0.0);
+    return far_point / dot(far_point, forward);
+}
+
+uint2 half_size() {
+    return (uint2(push.width, push.height) + 1) / 2;
+}
+
+// A half-resolution pixel position, in full-resolution pixels.
+float2 full_pixel(float2 half_pixel) {
+    return half_pixel * 2.0;
+}
+
+// --- 1. Prefilter -------------------------------------------------------------------
+
+// The search runs on a quarter of the pixels, and reads small images it can
+// keep in its caches: per 2 x 2 block, the nearest surface's distance in
+// front of the camera (0 for the sky) and its normal. The nearest, so that
+// a thin pole in front of a wall keeps its own occlusion. Both images are
+// storage images, which the later steps read back as storage images too:
+// one descriptor each, and they stay in eGeneral throughout.
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void prefilterMain(uint3 id : SV_DispatchThreadID) {
+    if (any(id.xy >= half_size())) {
+        return;
+    }
+
+    FrameData* frame = push.frame;
+    const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
+    const Texture2D normals = Texture2D.Handle(uint2(push.normals, 0));
+    RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
+    RWTexture2D<float2> ao_normals = RWTexture2D<float2>.Handle(uint2(push.ao_normals, 0));
+
+    // With reverse-Z, nearer means a greater depth.
+    int2 nearest = int2(id.xy) * 2;
+    float nearest_depth = 0.0;
+
+    for (int i = 0; i < 4; ++i) {
+        const int2 pixel = min(int2(id.xy) * 2 + int2(i & 1, i >> 1), int2(push.width, push.height) - 1);
+        const float depth = depth_buffer.Load(int3(pixel, 0)).r;
+
+        if (depth > nearest_depth) {
+            nearest_depth = depth;
+            nearest = pixel;
+        }
+    }
+
+    if (nearest_depth == 0.0) {
+        ao_depth[id.xy] = 0.0;
+        ao_normals[id.xy] = float2(0.0);
+        return;
+    }
+
+    const float3 position = unproject(frame, float2(nearest) + 0.5, nearest_depth);
+    ao_depth[id.xy] = dot(position, camera_forward(frame));
+    ao_normals[id.xy] = normals.Load(int3(nearest, 0)).xy;
 }
 
 // --- Small helpers ---------------------------------------------------------------
@@ -1672,36 +1797,51 @@ void arc_terms(float h, float cos_n, float sin_n, out float a, out float along_v
     along_slice = cos_n * (s3 / 3.0) + sin_n * (c3 / 3.0 - c);
 }
 
-// --- The horizon search ------------------------------------------------------------
+// --- 2. The horizon search -----------------------------------------------------------
 
+// Runs per half-resolution pixel, on the prefiltered images. A sample's
+// position is its pixel's ray times its distance in front of the camera:
+// the rays come from three computed here, by adding, with no matrix per
+// sample.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void gtaoMain(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= push.width || id.y >= push.height) {
+    const uint2 size = half_size();
+
+    if (any(id.xy >= size)) {
         return;
     }
 
     FrameData* frame = push.frame;
     const int2 pixel = int2(id.xy);
-    const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
-    const Texture2D normals = Texture2D.Handle(uint2(push.normals, 0));
+    RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
+    RWTexture2D<float2> ao_normals = RWTexture2D<float2>.Handle(uint2(push.ao_normals, 0));
     RWTexture2D<float4> target = RWTexture2D<float4>.Handle(uint2(push.target, 0));
 
-    // Depth 0 is the far plane: the sky, which nothing occludes.
-    const float depth = depth_buffer.Load(int3(pixel, 0)).r;
-    if (depth == 0.0) {
+    // A distance of 0 is the sky, which nothing occludes.
+    const float distance_here = ao_depth[pixel];
+    if (distance_here == 0.0) {
         target[pixel] = float4(0.0, 0.0, 0.0, 1.0);
         return;
     }
 
-    const float3 centre = world_position(frame, float2(pixel) + 0.5, depth);
-    const float3 view_dir = normalize(frame.camera_position - centre);
-    const float2 centre_pixels = float2(pixel) + 0.5;
+    // This pixel's ray, and how the ray changes from one half-resolution
+    // pixel to the next, across and down. The block's centre stands for
+    // whichever of its pixels the prefilter kept.
+    const float3 forward = camera_forward(frame);
+    const float2 here = float2(pixel) + 0.5;
+    const float3 ray = view_ray(frame, full_pixel(here), forward);
+    const float3 ray_across = view_ray(frame, full_pixel(here + float2(1.0, 0.0)), forward) - ray;
+    const float3 ray_down = view_ray(frame, full_pixel(here + float2(0.0, 1.0)), forward) - ray;
+
+    const float3 centre = ray * distance_here;
+    const float3 view_dir = normalize(-centre);  // toward the camera
+    const float2 centre_pixels = full_pixel(here);
 
     // The interpolated vertex normal: the surface at the scale the mesh
     // describes it. A normal facing away from the viewer has no arc the
     // integral can describe, so it's tilted just far enough to face it.
-    float3 normal = decode_octahedral(normals.Load(int3(pixel, 0)).xy);
+    float3 normal = decode_octahedral(ao_normals[pixel]);
     normal = normalize(normal + max(0.0, 1e-3 - dot(normal, view_dir)) * view_dir);
 
     // Two axes perpendicular to the view direction. A slice's direction is
@@ -1724,17 +1864,17 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
         const float3 ortho = axis_a * cos(phi) + axis_b * sin(phi);
         const float3 slice_normal = cross(view_dir, ortho);
 
-        // Where the slice runs on screen, and how many pixels the radius
-        // covers along it: project a point one radius away. Capped at 16
-        // pixels per step on average, so the steps never skip far over the
-        // surface.
-        const float2 reach = to_pixels(frame, centre + ortho * push.radius) - centre_pixels;
+        // Where the slice runs on screen, and how many half-resolution
+        // pixels the radius covers along it: project a point one radius
+        // away. Capped at 8 of them, 16 full-resolution pixels, per step on
+        // average, so the steps never skip far over the surface.
+        const float2 reach = (to_pixels(frame, centre + ortho * push.radius) - centre_pixels) * 0.5;
         const float reach_length = length(reach);
         if (reach_length < 1e-3) {
             continue;
         }
         const float2 omega = reach / reach_length;
-        const float radius_pixels = min(reach_length, 16.0 * float(push.steps));
+        const float radius_pixels = min(reach_length, 8.0 * float(push.steps));
 
         // The normal projected into the slice's plane, and its angle n from
         // the view direction, signed toward `ortho`.
@@ -1747,11 +1887,16 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
 
         const float cos_n = clamp(dot(projected, view_dir), -1.0, 1.0);
         const float n = sign(dot(projected, ortho)) * fast_acos(cos_n);
+        const float sin_n = sin(n);
 
         // Both horizons start fully open, at the edge of the hemisphere
-        // around the normal, kept as cosines from the view direction.
-        float horizon_positive = cos(n + half_pi);
-        float horizon_negative = cos(n - half_pi);
+        // around the normal, kept as cosines from the view direction:
+        // cos(n + pi/2) = -sin n on the positive side, cos(n - pi/2) = sin n
+        // on the negative one.
+        const float open_positive = -sin_n;
+        const float open_negative = sin_n;
+        float horizon_positive = open_positive;
+        float horizon_negative = open_negative;
 
         for (uint step = 0; step < push.steps; ++step) {
             // Steps bunch up near the centre (t squared), where contact
@@ -1761,17 +1906,19 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
             const int2 offset = int2(round(omega * distance_pixels));
 
             for (int side = 0; side < 2; ++side) {
-                const int2 sample_pixel = pixel + (side == 0 ? offset : -offset);
-                if (any(sample_pixel < 0) || sample_pixel.x >= int(push.width) || sample_pixel.y >= int(push.height)) {
+                const int2 sample_offset = side == 0 ? offset : -offset;
+                const int2 sample_pixel = pixel + sample_offset;
+                if (any(sample_pixel < 0) || any(sample_pixel >= int2(size))) {
                     continue;
                 }
 
-                const float sample_depth = depth_buffer.Load(int3(sample_pixel, 0)).r;
-                if (sample_depth == 0.0) {
+                const float sample_distance = ao_depth[sample_pixel];
+                if (sample_distance == 0.0) {
                     continue;
                 }
 
-                const float3 delta = world_position(frame, float2(sample_pixel) + 0.5, sample_depth) - centre;
+                const float3 sample_ray = ray + ray_across * float(sample_offset.x) + ray_down * float(sample_offset.y);
+                const float3 delta = sample_ray * sample_distance - centre;
                 const float distance = length(delta);
                 if (distance <= 1e-4 || distance > push.radius) {
                     continue;
@@ -1789,9 +1936,9 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
                 const float horizon = dot(delta / distance, view_dir);
 
                 if (side == 0) {
-                    horizon_positive = max(horizon_positive, lerp(cos(n + half_pi), horizon, retract));
+                    horizon_positive = max(horizon_positive, lerp(open_positive, horizon, retract));
                 } else {
-                    horizon_negative = max(horizon_negative, lerp(cos(n - half_pi), horizon, retract));
+                    horizon_negative = max(horizon_negative, lerp(open_negative, horizon, retract));
                 }
             }
         }
@@ -1801,7 +1948,6 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
         // slice's visibility; its centroid adds to the bent normal. Each slice
         // counts in proportion to the projected normal's length: the cosine
         // to the real normal is that length times the cosine within the slice.
-        const float sin_n = sin(n);
         float h0 = -fast_acos(clamp(horizon_negative, -1.0, 1.0));
         float h1 = fast_acos(clamp(horizon_positive, -1.0, 1.0));
         h0 = n + max(h0 - n, -half_pi);
@@ -1822,39 +1968,42 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
     target[pixel] = float4(bent_normal, visibility);
 }
 
-// --- The blur ------------------------------------------------------------------------
+// --- 3. The blur ------------------------------------------------------------------------
 
-// Nine taps along one axis, Gaussian-weighted, and weighted again by how close
-// each tap's surface is to this one's in distance from the camera, so the
-// blur never mixes a foreground edge with what's behind it. Only the
-// visibility is blurred: a bent normal averaged across an edge would point
-// into whatever it was averaged with.
-float camera_distance(FrameData* frame, int2 pixel, float depth) {
-    return length(world_position(frame, float2(pixel) + 0.5, depth) - frame.camera_position);
+// How much a neighbour at distance `other` in front of the camera counts
+// next to one at `here`: a Gaussian in their relative difference, with a 5%
+// difference one standard deviation. A foreground edge never mixes with
+// what's behind it.
+float depth_weight(float here, float other) {
+    const float difference = (other - here) / here;
+    return exp(-difference * difference * 200.0);
 }
 
+// Nine taps along one axis, at half resolution, Gaussian-weighted and
+// depth-weighted. Only the visibility is blurred: a bent normal averaged
+// across an edge would point into whatever it was averaged with.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void blurMain(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= push.width || id.y >= push.height) {
+    const uint2 size = half_size();
+
+    if (any(id.xy >= size)) {
         return;
     }
 
-    FrameData* frame = push.frame;
     const int2 pixel = int2(id.xy);
-    const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
+    RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
     RWTexture2D<float4> source = RWTexture2D<float4>.Handle(uint2(push.source, 0));
     RWTexture2D<float4> target = RWTexture2D<float4>.Handle(uint2(push.target, 0));
 
     const float4 centre = source[pixel];
-    const float centre_depth = depth_buffer.Load(int3(pixel, 0)).r;
+    const float centre_distance = ao_depth[pixel];
 
-    if (centre_depth == 0.0) {
+    if (centre_distance == 0.0) {
         target[pixel] = centre;
         return;
     }
 
-    const float centre_distance = camera_distance(frame, pixel, centre_depth);
     const int2 axis = push.blur_axis == 0 ? int2(1, 0) : int2(0, 1);
     const float weights[5] = {0.20416, 0.18017, 0.12383, 0.06628, 0.02763};  // a Gaussian, sigma 2
 
@@ -1864,19 +2013,16 @@ void blurMain(uint3 id : SV_DispatchThreadID) {
     for (int i = 1; i <= 4; ++i) {
         for (int side = 0; side < 2; ++side) {
             const int2 tap = pixel + axis * (side == 0 ? i : -i);
-            if (any(tap < 0) || tap.x >= int(push.width) || tap.y >= int(push.height)) {
+            if (any(tap < 0) || any(tap >= int2(size))) {
                 continue;
             }
 
-            const float tap_depth = depth_buffer.Load(int3(tap, 0)).r;
-            if (tap_depth == 0.0) {
+            const float tap_distance = ao_depth[tap];
+            if (tap_distance == 0.0) {
                 continue;
             }
 
-            // A 5% difference in distance is one standard deviation.
-            const float difference = (camera_distance(frame, tap, tap_depth) - centre_distance) / centre_distance;
-            const float weight = weights[i] * exp(-difference * difference * 200.0);
-
+            const float weight = weights[i] * depth_weight(centre_distance, tap_distance);
             sum += source[tap].w * weight;
             total += weight;
         }
@@ -1884,23 +2030,96 @@ void blurMain(uint3 id : SV_DispatchThreadID) {
 
     target[pixel] = float4(centre.xyz, sum / max(total, 1e-4));
 }
+
+// --- 4. Back to full resolution ------------------------------------------------------
+
+// Each full-resolution pixel sits among four half-resolution ones. Blending
+// them by distance alone (bilinearly) would smear occlusion across edges, so
+// each is also weighted by how close its depth is to this pixel's. Where
+// none is close, as on a thin edge whose surface no half-resolution pixel
+// kept, the closest in depth stands in alone.
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void upsampleMain(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= push.width || id.y >= push.height) {
+        return;
+    }
+
+    FrameData* frame = push.frame;
+    const int2 pixel = int2(id.xy);
+    const int2 size = int2(half_size());
+    const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
+    RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
+    RWTexture2D<float4> source = RWTexture2D<float4>.Handle(uint2(push.source, 0));
+    RWTexture2D<float4> target = RWTexture2D<float4>.Handle(uint2(push.target, 0));
+
+    const float depth = depth_buffer.Load(int3(pixel, 0)).r;
+    if (depth == 0.0) {
+        target[pixel] = float4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
+    const float here = dot(unproject(frame, float2(pixel) + 0.5, depth), camera_forward(frame));
+
+    // The half-resolution pixel centres around this one, and how far along
+    // between them it is.
+    const float2 position = (float2(pixel) + 0.5) * 0.5 - 0.5;
+    const int2 base = int2(floor(position));
+    const float2 along = position - float2(base);
+
+    float4 sum = 0.0;
+    float total = 0.0;
+    float4 closest = float4(0.0, 0.0, 0.0, 1.0);
+    float closest_difference = 1e30;
+
+    for (int i = 0; i < 4; ++i) {
+        const int2 corner = int2(i & 1, i >> 1);
+        const int2 neighbour = clamp(base + corner, int2(0), size - 1);
+        const float other = ao_depth[neighbour];
+        if (other == 0.0) {
+            continue;
+        }
+
+        const float4 value = source[neighbour];
+        const float2 bilinear = lerp(1.0 - along, along, float2(corner));
+        const float weight = bilinear.x * bilinear.y * depth_weight(here, other);
+        sum += float4(value.xyz * weight, value.w * weight);
+        total += weight;
+
+        if (abs(other - here) < closest_difference) {
+            closest_difference = abs(other - here);
+            closest = value;
+        }
+    }
+
+    if (total < 1e-3) {
+        target[pixel] = closest;
+        return;
+    }
+
+    const float3 bent = dot(sum.xyz, sum.xyz) > 1e-8 ? normalize(sum.xyz) : closest.xyz;
+    target[pixel] = float4(bent, sum.w / total);
+}
 ```
 
 ## 9.7 Recording the AO pass: `ambient_occlusion.h`, `ambient_occlusion.cpp`
 
 ### Why
-The AO pass is three compute dispatches with barriers between them. It's a self-contained step, so it gets its own small module, like the environment did.
+The AO pass is five compute dispatches with barriers between them. It's a self-contained step, so it gets its own small module, like the environment did.
 
 ### How
-- **`AmbientOcclusion`** holds the two compute pipelines, `gtaoMain` and `blurMain` from the one module, and the settings: 0.8 m, 4 slices, 6 steps.
+- **`AmbientOcclusion`** holds the four compute pipelines, all from the one module, and the settings: 0.8 m, 4 slices, 6 steps.
+- **`AoTargets`** names the five AO images' storage slots.
 - **`record_ambient_occlusion`** records:
-  1. **Both AO images to `eGeneral`,** from `eUndefined`: they're rewritten from scratch. The barrier also waits for the previous frame's lighting to finish reading the AO image.
-  2. **The search,** into `ao`.
-  3. **A barrier:** the search's writes must reach the blur's reads. A memory barrier is enough: the images stay in `eGeneral`.
-  4. **The blur across,** from `ao` into `ao_blur`. Another barrier.
-  5. **The blur down,** from `ao_blur` back into `ao`.
+  1. **Every AO image to `eGeneral`,** from `eUndefined`: they're rewritten from scratch. The barriers also wait for the previous frame's lighting to finish reading the AO image, and for its AO steps to finish with the others.
+  2. **The prefilter,** into `ao_depth` and `ao_normals`.
+  3. **The search,** into `ao_raw`.
+  4. **The blur across,** from `ao_raw` into `ao_blur`, then **down,** back into `ao_raw`.
+  5. **The upsample,** from `ao_raw` into `ao`, at full resolution.
   6. **`ao` to `eShaderReadOnlyOptimal`,** ready for the lighting pass's fragment shaders.
-- **One thread per pixel,** in 8 × 8 workgroups, rounded up to cover the image. Shaders skip the threads outside it.
+
+  Between every two steps, a memory barrier: one step's writes must reach the next one's reads. The images stay in `eGeneral` throughout.
+- **One thread per pixel** of the image each step writes, half or full resolution, in 8 × 8 workgroups, rounded up to cover it. Shaders skip the threads outside it.
 
 ### Code
 `game-engine/src/includes/ambient_occlusion.h`:
@@ -1918,26 +2137,38 @@ The AO pass is three compute dispatches with barriers between them. It's a self-
 // up to 0.8 m away count, found along 4 slices of 6 steps each way. Fewer
 // slices leave noise the blur can't hide; more cost time for little change.
 struct AmbientOcclusion {
+    vk::raii::Pipeline prefilter = nullptr;
     vk::raii::Pipeline search = nullptr;
     vk::raii::Pipeline blur = nullptr;
+    vk::raii::Pipeline upsample = nullptr;
     float radius = 0.8f;
     std::uint32_t slices = 4;
     std::uint32_t steps = 6;
 };
 
+// Resource heap slots of the AO images, as storage: each step writes one or
+// two of them, and later steps read them back.
+struct AoTargets {
+    std::uint32_t ao_depth = 0;    // swapchain.ao_depth
+    std::uint32_t ao_normals = 0;  // swapchain.ao_normals
+    std::uint32_t ao_raw = 0;      // swapchain.ao_raw
+    std::uint32_t ao_blur = 0;     // swapchain.ao_blur
+    std::uint32_t ao = 0;          // swapchain.ao, full resolution
+};
+
 AmbientOcclusion create_ambient_occlusion(const vk::raii::Device& device);
 
-// Records the whole pass: the search into swapchain.ao, then the blur, across
-// into swapchain.ao_blur and down back into swapchain.ao. `push` names the
-// frame and the slots: the depth and normals (sampled, in their read-only
-// layouts by now) and the two AO images as storage (source and target are
-// filled in here). On return swapchain.ao is ready for fragment shaders.
+// Records the whole pass, in four steps: the prefilter, into the
+// half-resolution depth and normals; the search, into ao_raw; the blur,
+// across into ao_blur and down back into ao_raw; and the upsample, into the
+// full-resolution swapchain.ao. `push` names the frame and the depth and
+// normals (sampled, in their read-only layouts by now); the rest is filled
+// in here. On return swapchain.ao is ready for fragment shaders.
 void record_ambient_occlusion(
     const vk::raii::CommandBuffer& commands,
     const AmbientOcclusion& ambient_occlusion,
     const Swapchain& swapchain,
-    std::uint32_t ao_target,
-    std::uint32_t ao_blur_target,
+    const AoTargets& targets,
     AoPushData push
 );
 ```
@@ -1977,14 +2208,15 @@ void barrier(
     commands.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &image_barrier});
 }
 
-// One compute step over the whole image, in the shaders' 8 x 8 workgroups.
-void dispatch(const vk::raii::CommandBuffer& commands, const vk::raii::Pipeline& pipeline, const AoPushData& push) {
+// One compute step over an image `size` pixels wide, in the shaders' 8 x 8
+// workgroups.
+void dispatch(const vk::raii::CommandBuffer& commands, const vk::raii::Pipeline& pipeline, const AoPushData& push, vk::Extent2D size) {
     commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
     commands.pushDataEXT(vk::PushDataInfoEXT{
         .offset = 0,
         .data = {.address = &push, .size = sizeof(push)},
     });
-    commands.dispatch((push.width + 7) / 8, (push.height + 7) / 8, 1);
+    commands.dispatch((size.width + 7) / 8, (size.height + 7) / 8, 1);
 }
 
 // Between two compute steps: the first's storage writes, visible to the second.
@@ -2005,8 +2237,10 @@ void compute_to_compute(const vk::raii::CommandBuffer& commands) {
 
 AmbientOcclusion create_ambient_occlusion(const vk::raii::Device& device) {
     AmbientOcclusion ambient_occlusion;
+    ambient_occlusion.prefilter = create_compute_pipeline(device, "ao", "prefilterMain");
     ambient_occlusion.search = create_compute_pipeline(device, "ao", "gtaoMain");
     ambient_occlusion.blur = create_compute_pipeline(device, "ao", "blurMain");
+    ambient_occlusion.upsample = create_compute_pipeline(device, "ao", "upsampleMain");
     return ambient_occlusion;
 }
 
@@ -2016,42 +2250,59 @@ void record_ambient_occlusion(
     const vk::raii::CommandBuffer& commands,
     const AmbientOcclusion& ambient_occlusion,
     const Swapchain& swapchain,
-    std::uint32_t ao_target,
-    std::uint32_t ao_blur_target,
+    const AoTargets& targets,
     AoPushData push
 ) {
-    push.width = swapchain.extent.width;
-    push.height = swapchain.extent.height;
+    const vk::Extent2D full = swapchain.extent;
+    const vk::Extent2D half{(full.width + 1) / 2, (full.height + 1) / 2};
+
+    push.ao_depth = targets.ao_depth;
+    push.ao_normals = targets.ao_normals;
+    push.width = full.width;
+    push.height = full.height;
     push.radius = ambient_occlusion.radius;
     push.slices = ambient_occlusion.slices;
     push.steps = ambient_occlusion.steps;
 
-    // Both images are rewritten from scratch. Frames in flight share them,
-    // so this also waits for the previous frame's lighting to finish
-    // reading the AO image.
+    // Every image is rewritten from scratch. Frames in flight share them, so
+    // this also waits for the previous frame's lighting to finish reading
+    // the AO image, and for its AO steps to finish with the others.
     barrier(commands, swapchain.ao, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
         vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderSampledRead,
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite);
-    barrier(commands, swapchain.ao_blur, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
-        vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageRead,
-        vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite);
 
-    // 1. The horizon search, into the AO image.
-    push.target = ao_target;
-    dispatch(commands, ambient_occlusion.search, push);
+    for (const Image* image : {&swapchain.ao_depth, &swapchain.ao_normals, &swapchain.ao_raw, &swapchain.ao_blur}) {
+        barrier(commands, *image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageRead,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite);
+    }
+
+    // 1. The prefilter: each 2 x 2 block's nearest surface.
+    dispatch(commands, ambient_occlusion.prefilter, push, half);
     compute_to_compute(commands);
 
-    // 2. The blur across, into the blur image, then down, back into the AO image.
-    push.source = ao_target;
-    push.target = ao_blur_target;
+    // 2. The horizon search, into ao_raw.
+    push.target = targets.ao_raw;
+    dispatch(commands, ambient_occlusion.search, push, half);
+    compute_to_compute(commands);
+
+    // 3. The blur across, into ao_blur, then down, back into ao_raw.
+    push.source = targets.ao_raw;
+    push.target = targets.ao_blur;
     push.blur_axis = 0;
-    dispatch(commands, ambient_occlusion.blur, push);
+    dispatch(commands, ambient_occlusion.blur, push, half);
     compute_to_compute(commands);
 
-    push.source = ao_blur_target;
-    push.target = ao_target;
+    push.source = targets.ao_blur;
+    push.target = targets.ao_raw;
     push.blur_axis = 1;
-    dispatch(commands, ambient_occlusion.blur, push);
+    dispatch(commands, ambient_occlusion.blur, push, half);
+    compute_to_compute(commands);
+
+    // 4. Back to full resolution, into the AO image.
+    push.source = targets.ao_raw;
+    push.target = targets.ao;
+    dispatch(commands, ambient_occlusion.upsample, push, full);
 
     // The lighting pass samples it.
     barrier(commands, swapchain.ao, vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -2065,10 +2316,10 @@ CMake already picks up every `.cpp` under `src/` and every `.slang` under `shade
 ## 9.8 Four passes a frame: `main.cpp`
 
 ### Why
-`record_frame` grows from two passes to four, and the swapchain images it uses now need six heap slots instead of one.
+`record_frame` grows from two passes to four, and the swapchain images it uses now need nine heap slots instead of one.
 
 ### How
-- **`ScreenSlots`** names the six slots the screen images use, right after the textures: the HDR image, depth, normals, and the AO image as sampled, plus the two AO images as storage. `describe_screen` writes all six, at startup and after every resize.
+- **`ScreenSlots`** names the nine slots the screen images use, right after the textures: the HDR image, depth, normals and the AO image as sampled, plus the five AO images as storage, in `ao_targets`. `describe_screen` writes all nine, at startup and after every resize.
 - **`ScenePipelines`** gathers the pipelines: the prepass's two (opaque, masked), the lighting pass's three, the sky and tone mapping.
 - **`draw_batch`** draws one alpha mode's batch, the loop from Chapter 8, now shared by both passes. `set_viewport` likewise.
 - **`record_frame`:**
@@ -2187,11 +2438,10 @@ struct ScreenSlots {
     std::uint32_t depth = 0;           // sampled, by ambient occlusion
     std::uint32_t normals = 0;         // sampled, by ambient occlusion
     std::uint32_t ao = 0;              // sampled, by the lighting pass
-    std::uint32_t ao_target = 0;       // storage, for the AO pass
-    std::uint32_t ao_blur_target = 0;  // storage, for the AO pass
+    AoTargets ao_targets;              // storage, for the AO pass
 };
 
-constexpr std::uint32_t screen_slot_count = 6;
+constexpr std::uint32_t screen_slot_count = 9;
 
 // Every graphics pipeline a frame uses. The mesh pipelines are indexed by
 // alpha mode, in alpha_modes' order; the prepass has no blended one, since
@@ -2368,7 +2618,7 @@ void record_frame(
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead
     );
 
-    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_target, draws.screen.ao_blur_target,
+    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_targets,
         AoPushData{.frame = draws.frame, .depth = draws.screen.depth, .normals = draws.screen.normals});
 
     // --- Pass 3: the lighting --------------------------------------------------
@@ -2725,8 +2975,13 @@ int main() {
             .depth = first_screen_slot + 1,
             .normals = first_screen_slot + 2,
             .ao = first_screen_slot + 3,
-            .ao_target = first_screen_slot + 4,
-            .ao_blur_target = first_screen_slot + 5,
+            .ao_targets = {
+                .ao_depth = first_screen_slot + 4,
+                .ao_normals = first_screen_slot + 5,
+                .ao_raw = first_screen_slot + 6,
+                .ao_blur = first_screen_slot + 7,
+                .ao = first_screen_slot + 8,
+            },
         };
 
         // The swapchain's images are recreated with it, so their descriptors
@@ -2747,8 +3002,11 @@ int main() {
             write_image_descriptor(device, heaps, screen.depth, whole(swapchain.depth, vk::ImageAspectFlagBits::eDepth));
             write_image_descriptor(device, heaps, screen.normals, whole(swapchain.normals, color));
             write_image_descriptor(device, heaps, screen.ao, whole(swapchain.ao, color));
-            write_image_descriptor(device, heaps, screen.ao_target, whole(swapchain.ao, color), storage);
-            write_image_descriptor(device, heaps, screen.ao_blur_target, whole(swapchain.ao_blur, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_depth, whole(swapchain.ao_depth, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_normals, whole(swapchain.ao_normals, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_raw, whole(swapchain.ao_raw, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_blur, whole(swapchain.ao_blur, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao, whole(swapchain.ao, color), storage);
         };
 
         describe_screen();
@@ -3030,7 +3288,7 @@ Press Enter (option 7) to build in debug with clang and run.
 
 **Expected:**
 - **The window** opens at 10:00 in the simulated sky, as before. The title now ends in `AO on`.
-- **`9`** shows the ambient occlusion: white almost everywhere, smoothly darkening into the corners where walls meet floors, under the arches, behind the curtains and around the bases of the columns. There should be no speckle: the blur removes the per-pixel noise. The sky shows behind, untouched by tone mapping, as in the other debug views.
+- **`9`** shows the ambient occlusion: white almost everywhere, smoothly darkening into the corners where walls meet floors, under the arches, behind the curtains and around the bases of the columns. There should be no speckle: the blur removes the per-pixel noise, and no dark or light fringes along edges: the upsample keeps to each surface's own depth. The sky shows behind, untouched by tone mapping, as in the other debug views.
 - **`O`** switches AO off and on in the lit view. The difference shows most in the shade: the courtyard's corners, the walkways behind the columns and the folds of the curtains darken, while sunlit surfaces barely change.
 - **Toward evening** (`]`), when sky light is all there is, the AO matters most: the interior reads as a solid space instead of glowing evenly.
 - **Resizing the window** keeps working: the new images are rebuilt with the swapchain.

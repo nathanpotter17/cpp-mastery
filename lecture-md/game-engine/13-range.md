@@ -295,7 +295,7 @@ struct FrameData {
     std::uint32_t clamp_sampler;        // sampler heap index: trilinear, clamped to the edge
     std::uint32_t specular_mips;        // mip levels of specular_cube: roughness 0 to 1
     float sun_angular_radius;           // radians: half the sun's apparent width
-    std::uint32_t ambient_occlusion;    // resource heap slot: the blurred GTAO image
+    std::uint32_t ambient_occlusion;    // resource heap slot: the GTAO image, full resolution
     std::uint32_t ao_enabled;           // 0: ignore it, to compare
     glm::vec3 camera_offset;            // where in its cell the camera is
     glm::vec3 tlas_offset;              // the camera, measured from the TLAS's origin (acceleration.h)
@@ -409,16 +409,18 @@ static_assert(sizeof(EnvironmentPushData) == 48);
 static_assert(offsetof(EnvironmentPushData, sun_direction) == 16);
 static_assert(offsetof(EnvironmentPushData, size) == 32);
 
-// The ambient occlusion compute shaders' push data (ao.slang). Each dispatch
-// reads `source` and writes `target`, both storage images, except the GTAO
-// pass, which reads the depth and normals and only writes.
+// The ambient occlusion compute shaders' push data (ao.slang), the same for
+// all four steps. The half-resolution images and `source` and `target` are
+// storage images; each step reads and writes the ones it needs.
 struct AoPushData {
     vk::DeviceAddress frame = 0;   // this frame's FrameData
     std::uint32_t depth = 0;       // resource heap slot: the depth buffer, sampled
     std::uint32_t normals = 0;     // resource heap slot: the prepass's normals, sampled
-    std::uint32_t source = 0;      // resource heap slot: what the blur reads (storage)
+    std::uint32_t ao_depth = 0;    // resource heap slot: half resolution, nearest distance (storage)
+    std::uint32_t ao_normals = 0;  // resource heap slot: half resolution, its normal (storage)
+    std::uint32_t source = 0;      // resource heap slot: what this step reads (storage)
     std::uint32_t target = 0;      // resource heap slot: what this step writes (storage)
-    std::uint32_t width = 0;       // the images' size in pixels
+    std::uint32_t width = 0;       // the full-resolution images' size in pixels
     std::uint32_t height = 0;
     float radius = 0.0f;           // meters: how far around a point occluders are looked for
     std::uint32_t slices = 0;      // directions around the view vector
@@ -426,7 +428,7 @@ struct AoPushData {
     std::uint32_t blur_axis = 0;   // the blur's direction: 0 across, 1 down
 };
 
-static_assert(sizeof(AoPushData) == 48);
+static_assert(sizeof(AoPushData) == 56);
 ```
 
 `game-engine/shaders/shared.slangh`:
@@ -1558,7 +1560,7 @@ Every position a shader computes is now relative to the camera. Where they compa
   - **The view direction** is `normalize(−relative_position)`.
   - **Lights:** `punctual_light` moves each light's cell and offset into camera-relative space.
   - **Shadow rays:** `shadow_ray_origin` adds `tlas_offset` first, then pushes the origin off the surface. The push grows with the coordinates the ray is really traced at, in the TLAS's space.
-- **`ao.slang`:** `relative_position` rebuilds a camera-relative position from the depth buffer, through the inverse view-projection, as before. The view direction and the camera distance need no camera position.
+- **`ao.slang`:** it already measured everything from the camera, subtracting the camera's position after unprojecting and adding it back before projecting. `unproject` and `to_pixels` now drop both: the inverse view-projection gives camera-relative positions, and the view-projection takes them. Its rays now come from the near plane instead of the far one: depth 0 is infinitely far now, and with nothing taken off, the near plane loses no digits.
 - **`cull.slang`:** each draw's box corners go through `camera_relative` before the frustum test. The far plane culls nothing now.
 - **`background.slang`:** a pixel's view direction comes from its point on the near plane, at depth 1, divided by `w`. The far plane is at infinity: there, `w` is 0, and the division fails.
 
@@ -2282,14 +2284,21 @@ TransparentOutput transparentMain(VertexOutput input, bool front_face : SV_IsFro
 `game-engine/shaders/ao.slang`:
 ```slang
 // Ambient occlusion: how much of the sky each visible point can see, from the
-// depth buffer and the prepass's normals. Ground-truth ambient occlusion (GTAO: Jimenez et al.
-// 2016, "Practical Real-Time Strategies for Accurate Indirect Occlusion"), in
-// the form Intel's XeGTAO gives it:
-//   gtaoMain  for a few slices of the hemisphere around the view direction,
-//             walk outward on both sides and keep the highest horizon found;
-//             the visible arc between the two horizons, integrated against
-//             the cosine, is the visibility, and its centroid the bent normal
-//   blurMain  a separable, depth-aware blur of the visibility
+// depth buffer and the prepass's normals. Ground-truth ambient occlusion
+// (GTAO: Jimenez et al. 2016, "Practical Real-Time Strategies for Accurate
+// Indirect Occlusion"), in the form Intel's XeGTAO gives it, at half
+// resolution, in four steps:
+//   prefilterMain  per 2 x 2 block of pixels: the nearest surface's distance
+//                  in front of the camera and its normal, at half resolution
+//   gtaoMain       for a few slices of the hemisphere around the view
+//                  direction, walk outward on both sides and keep the highest
+//                  horizon found; the visible arc between the two horizons,
+//                  integrated against the cosine, is the visibility, and its
+//                  centroid the bent normal
+//   blurMain       a separable, depth-aware blur of the visibility
+//   upsampleMain   back to full resolution: each pixel blends its four
+//                  nearest half-resolution results, weighted by distance and
+//                  by how close their depth is to its own
 // It's deterministic: a fixed per-pixel hash, no frame index, no accumulation.
 
 #include "shared.slangh"
@@ -2298,11 +2307,13 @@ TransparentOutput transparentMain(VertexOutput input, bool front_face : SV_IsFro
 
 struct AoPushData {
     FrameData* frame;
-    uint depth;
-    uint normals;
+    uint depth;       // the depth buffer, full resolution
+    uint normals;     // the prepass's normals, full resolution
+    uint ao_depth;    // half resolution: distance in front of the camera
+    uint ao_normals;  // half resolution: the normal, octahedral
     uint source;
     uint target;
-    uint width;
+    uint width;       // full resolution
     uint height;
     float radius;
     uint slices;
@@ -2316,21 +2327,98 @@ ConstantBuffer<AoPushData> push;
 static const float pi = 3.14159265;
 static const float half_pi = 1.57079633;
 
-// --- Positions from the depth buffer -------------------------------------------
+// --- Positions ---------------------------------------------------------------------
 
-// The camera-relative position of the surface at pixel position `pixel`
-// with depth `depth`: its clip-space coordinates, back through the inverse
-// view-projection, divided by w.
-float3 relative_position(FrameData* frame, float2 pixel, float depth) {
+// Everything here is measured from the camera, as in every shader: the
+// view direction toward it is just the negated position.
+
+// The camera-relative position of the surface at full-resolution pixel
+// position `pixel` with depth `depth`: its clip-space coordinates, back
+// through the inverse view-projection, divided by w.
+float3 unproject(FrameData* frame, float2 pixel, float depth) {
     const float2 ndc = pixel / float2(push.width, push.height) * 2.0 - 1.0;
     const float4 position = mul(frame.inverse_view_projection, float4(ndc, depth, 1.0));
     return position.xyz / position.w;
 }
 
-// Where a camera-relative position lands on screen, in pixels.
+// Where a camera-relative position lands on screen, in full-resolution
+// pixels.
 float2 to_pixels(FrameData* frame, float3 position) {
     const float4 clip = mul(frame.view_projection, float4(position, 1.0));
     return (clip.xy / clip.w * 0.5 + 0.5) * float2(push.width, push.height);
+}
+
+// The direction the camera looks along: through the centre of the screen.
+// Both this and view_ray unproject at the near plane, depth 1: with no far
+// plane, depth 0 is infinitely far, and positions are already measured from
+// the camera, so nothing is taken off them to lose digits.
+float3 camera_forward(FrameData* frame) {
+    return normalize(unproject(frame, float2(push.width, push.height) * 0.5, 1.0));
+}
+
+// The ray through full-resolution pixel position `pixel`, scaled so that one
+// step along it is one metre further in front of the camera: a point at
+// distance d in front of the camera, along the ray, is at ray x d. Rays
+// through the pixels of one row or column change by the same amount from
+// pixel to pixel, so a few rays give all the others by adding.
+float3 view_ray(FrameData* frame, float2 pixel, float3 forward) {
+    const float3 near_point = unproject(frame, pixel, 1.0);
+    return near_point / dot(near_point, forward);
+}
+
+uint2 half_size() {
+    return (uint2(push.width, push.height) + 1) / 2;
+}
+
+// A half-resolution pixel position, in full-resolution pixels.
+float2 full_pixel(float2 half_pixel) {
+    return half_pixel * 2.0;
+}
+
+// --- 1. Prefilter -------------------------------------------------------------------
+
+// The search runs on a quarter of the pixels, and reads small images it can
+// keep in its caches: per 2 x 2 block, the nearest surface's distance in
+// front of the camera (0 for the sky) and its normal. The nearest, so that
+// a thin pole in front of a wall keeps its own occlusion. Both images are
+// storage images, which the later steps read back as storage images too:
+// one descriptor each, and they stay in eGeneral throughout.
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void prefilterMain(uint3 id : SV_DispatchThreadID) {
+    if (any(id.xy >= half_size())) {
+        return;
+    }
+
+    FrameData* frame = push.frame;
+    const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
+    const Texture2D normals = Texture2D.Handle(uint2(push.normals, 0));
+    RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
+    RWTexture2D<float2> ao_normals = RWTexture2D<float2>.Handle(uint2(push.ao_normals, 0));
+
+    // With reverse-Z, nearer means a greater depth.
+    int2 nearest = int2(id.xy) * 2;
+    float nearest_depth = 0.0;
+
+    for (int i = 0; i < 4; ++i) {
+        const int2 pixel = min(int2(id.xy) * 2 + int2(i & 1, i >> 1), int2(push.width, push.height) - 1);
+        const float depth = depth_buffer.Load(int3(pixel, 0)).r;
+
+        if (depth > nearest_depth) {
+            nearest_depth = depth;
+            nearest = pixel;
+        }
+    }
+
+    if (nearest_depth == 0.0) {
+        ao_depth[id.xy] = 0.0;
+        ao_normals[id.xy] = float2(0.0);
+        return;
+    }
+
+    const float3 position = unproject(frame, float2(nearest) + 0.5, nearest_depth);
+    ao_depth[id.xy] = dot(position, camera_forward(frame));
+    ao_normals[id.xy] = normals.Load(int3(nearest, 0)).xy;
 }
 
 // --- Small helpers ---------------------------------------------------------------
@@ -2380,36 +2468,51 @@ void arc_terms(float h, float cos_n, float sin_n, out float a, out float along_v
     along_slice = cos_n * (s3 / 3.0) + sin_n * (c3 / 3.0 - c);
 }
 
-// --- The horizon search ------------------------------------------------------------
+// --- 2. The horizon search -----------------------------------------------------------
 
+// Runs per half-resolution pixel, on the prefiltered images. A sample's
+// position is its pixel's ray times its distance in front of the camera:
+// the rays come from three computed here, by adding, with no matrix per
+// sample.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void gtaoMain(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= push.width || id.y >= push.height) {
+    const uint2 size = half_size();
+
+    if (any(id.xy >= size)) {
         return;
     }
 
     FrameData* frame = push.frame;
     const int2 pixel = int2(id.xy);
-    const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
-    const Texture2D normals = Texture2D.Handle(uint2(push.normals, 0));
+    RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
+    RWTexture2D<float2> ao_normals = RWTexture2D<float2>.Handle(uint2(push.ao_normals, 0));
     RWTexture2D<float4> target = RWTexture2D<float4>.Handle(uint2(push.target, 0));
 
-    // Depth 0 is infinitely far: the sky, which nothing occludes.
-    const float depth = depth_buffer.Load(int3(pixel, 0)).r;
-    if (depth == 0.0) {
+    // A distance of 0 is the sky, which nothing occludes.
+    const float distance_here = ao_depth[pixel];
+    if (distance_here == 0.0) {
         target[pixel] = float4(0.0, 0.0, 0.0, 1.0);
         return;
     }
 
-    const float3 centre = relative_position(frame, float2(pixel) + 0.5, depth);
-    const float3 view_dir = normalize(-centre);  // toward the camera, at the origin
-    const float2 centre_pixels = float2(pixel) + 0.5;
+    // This pixel's ray, and how the ray changes from one half-resolution
+    // pixel to the next, across and down. The block's centre stands for
+    // whichever of its pixels the prefilter kept.
+    const float3 forward = camera_forward(frame);
+    const float2 here = float2(pixel) + 0.5;
+    const float3 ray = view_ray(frame, full_pixel(here), forward);
+    const float3 ray_across = view_ray(frame, full_pixel(here + float2(1.0, 0.0)), forward) - ray;
+    const float3 ray_down = view_ray(frame, full_pixel(here + float2(0.0, 1.0)), forward) - ray;
+
+    const float3 centre = ray * distance_here;
+    const float3 view_dir = normalize(-centre);  // toward the camera
+    const float2 centre_pixels = full_pixel(here);
 
     // The interpolated vertex normal: the surface at the scale the mesh
     // describes it. A normal facing away from the viewer has no arc the
     // integral can describe, so it's tilted just far enough to face it.
-    float3 normal = decode_octahedral(normals.Load(int3(pixel, 0)).xy);
+    float3 normal = decode_octahedral(ao_normals[pixel]);
     normal = normalize(normal + max(0.0, 1e-3 - dot(normal, view_dir)) * view_dir);
 
     // Two axes perpendicular to the view direction. A slice's direction is
@@ -2432,17 +2535,17 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
         const float3 ortho = axis_a * cos(phi) + axis_b * sin(phi);
         const float3 slice_normal = cross(view_dir, ortho);
 
-        // Where the slice runs on screen, and how many pixels the radius
-        // covers along it: project a point one radius away. Capped at 16
-        // pixels per step on average, so the steps never skip far over the
-        // surface.
-        const float2 reach = to_pixels(frame, centre + ortho * push.radius) - centre_pixels;
+        // Where the slice runs on screen, and how many half-resolution
+        // pixels the radius covers along it: project a point one radius
+        // away. Capped at 8 of them, 16 full-resolution pixels, per step on
+        // average, so the steps never skip far over the surface.
+        const float2 reach = (to_pixels(frame, centre + ortho * push.radius) - centre_pixels) * 0.5;
         const float reach_length = length(reach);
         if (reach_length < 1e-3) {
             continue;
         }
         const float2 omega = reach / reach_length;
-        const float radius_pixels = min(reach_length, 16.0 * float(push.steps));
+        const float radius_pixels = min(reach_length, 8.0 * float(push.steps));
 
         // The normal projected into the slice's plane, and its angle n from
         // the view direction, signed toward `ortho`.
@@ -2455,11 +2558,16 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
 
         const float cos_n = clamp(dot(projected, view_dir), -1.0, 1.0);
         const float n = sign(dot(projected, ortho)) * fast_acos(cos_n);
+        const float sin_n = sin(n);
 
         // Both horizons start fully open, at the edge of the hemisphere
-        // around the normal, kept as cosines from the view direction.
-        float horizon_positive = cos(n + half_pi);
-        float horizon_negative = cos(n - half_pi);
+        // around the normal, kept as cosines from the view direction:
+        // cos(n + pi/2) = -sin n on the positive side, cos(n - pi/2) = sin n
+        // on the negative one.
+        const float open_positive = -sin_n;
+        const float open_negative = sin_n;
+        float horizon_positive = open_positive;
+        float horizon_negative = open_negative;
 
         for (uint step = 0; step < push.steps; ++step) {
             // Steps bunch up near the centre (t squared), where contact
@@ -2469,17 +2577,19 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
             const int2 offset = int2(round(omega * distance_pixels));
 
             for (int side = 0; side < 2; ++side) {
-                const int2 sample_pixel = pixel + (side == 0 ? offset : -offset);
-                if (any(sample_pixel < 0) || sample_pixel.x >= int(push.width) || sample_pixel.y >= int(push.height)) {
+                const int2 sample_offset = side == 0 ? offset : -offset;
+                const int2 sample_pixel = pixel + sample_offset;
+                if (any(sample_pixel < 0) || any(sample_pixel >= int2(size))) {
                     continue;
                 }
 
-                const float sample_depth = depth_buffer.Load(int3(sample_pixel, 0)).r;
-                if (sample_depth == 0.0) {
+                const float sample_distance = ao_depth[sample_pixel];
+                if (sample_distance == 0.0) {
                     continue;
                 }
 
-                const float3 delta = relative_position(frame, float2(sample_pixel) + 0.5, sample_depth) - centre;
+                const float3 sample_ray = ray + ray_across * float(sample_offset.x) + ray_down * float(sample_offset.y);
+                const float3 delta = sample_ray * sample_distance - centre;
                 const float distance = length(delta);
                 if (distance <= 1e-4 || distance > push.radius) {
                     continue;
@@ -2497,9 +2607,9 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
                 const float horizon = dot(delta / distance, view_dir);
 
                 if (side == 0) {
-                    horizon_positive = max(horizon_positive, lerp(cos(n + half_pi), horizon, retract));
+                    horizon_positive = max(horizon_positive, lerp(open_positive, horizon, retract));
                 } else {
-                    horizon_negative = max(horizon_negative, lerp(cos(n - half_pi), horizon, retract));
+                    horizon_negative = max(horizon_negative, lerp(open_negative, horizon, retract));
                 }
             }
         }
@@ -2509,7 +2619,6 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
         // slice's visibility; its centroid adds to the bent normal. Each slice
         // counts in proportion to the projected normal's length: the cosine
         // to the real normal is that length times the cosine within the slice.
-        const float sin_n = sin(n);
         float h0 = -fast_acos(clamp(horizon_negative, -1.0, 1.0));
         float h1 = fast_acos(clamp(horizon_positive, -1.0, 1.0));
         h0 = n + max(h0 - n, -half_pi);
@@ -2530,39 +2639,42 @@ void gtaoMain(uint3 id : SV_DispatchThreadID) {
     target[pixel] = float4(bent_normal, visibility);
 }
 
-// --- The blur ------------------------------------------------------------------------
+// --- 3. The blur ------------------------------------------------------------------------
 
-// Nine taps along one axis, Gaussian-weighted, and weighted again by how close
-// each tap's surface is to this one's in distance from the camera, so the
-// blur never mixes a foreground edge with what's behind it. Only the
-// visibility is blurred: a bent normal averaged across an edge would point
-// into whatever it was averaged with.
-float camera_distance(FrameData* frame, int2 pixel, float depth) {
-    return length(relative_position(frame, float2(pixel) + 0.5, depth));
+// How much a neighbour at distance `other` in front of the camera counts
+// next to one at `here`: a Gaussian in their relative difference, with a 5%
+// difference one standard deviation. A foreground edge never mixes with
+// what's behind it.
+float depth_weight(float here, float other) {
+    const float difference = (other - here) / here;
+    return exp(-difference * difference * 200.0);
 }
 
+// Nine taps along one axis, at half resolution, Gaussian-weighted and
+// depth-weighted. Only the visibility is blurred: a bent normal averaged
+// across an edge would point into whatever it was averaged with.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void blurMain(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= push.width || id.y >= push.height) {
+    const uint2 size = half_size();
+
+    if (any(id.xy >= size)) {
         return;
     }
 
-    FrameData* frame = push.frame;
     const int2 pixel = int2(id.xy);
-    const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
+    RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
     RWTexture2D<float4> source = RWTexture2D<float4>.Handle(uint2(push.source, 0));
     RWTexture2D<float4> target = RWTexture2D<float4>.Handle(uint2(push.target, 0));
 
     const float4 centre = source[pixel];
-    const float centre_depth = depth_buffer.Load(int3(pixel, 0)).r;
+    const float centre_distance = ao_depth[pixel];
 
-    if (centre_depth == 0.0) {
+    if (centre_distance == 0.0) {
         target[pixel] = centre;
         return;
     }
 
-    const float centre_distance = camera_distance(frame, pixel, centre_depth);
     const int2 axis = push.blur_axis == 0 ? int2(1, 0) : int2(0, 1);
     const float weights[5] = {0.20416, 0.18017, 0.12383, 0.06628, 0.02763};  // a Gaussian, sigma 2
 
@@ -2572,25 +2684,92 @@ void blurMain(uint3 id : SV_DispatchThreadID) {
     for (int i = 1; i <= 4; ++i) {
         for (int side = 0; side < 2; ++side) {
             const int2 tap = pixel + axis * (side == 0 ? i : -i);
-            if (any(tap < 0) || tap.x >= int(push.width) || tap.y >= int(push.height)) {
+            if (any(tap < 0) || any(tap >= int2(size))) {
                 continue;
             }
 
-            const float tap_depth = depth_buffer.Load(int3(tap, 0)).r;
-            if (tap_depth == 0.0) {
+            const float tap_distance = ao_depth[tap];
+            if (tap_distance == 0.0) {
                 continue;
             }
 
-            // A 5% difference in distance is one standard deviation.
-            const float difference = (camera_distance(frame, tap, tap_depth) - centre_distance) / centre_distance;
-            const float weight = weights[i] * exp(-difference * difference * 200.0);
-
+            const float weight = weights[i] * depth_weight(centre_distance, tap_distance);
             sum += source[tap].w * weight;
             total += weight;
         }
     }
 
     target[pixel] = float4(centre.xyz, sum / max(total, 1e-4));
+}
+
+// --- 4. Back to full resolution ------------------------------------------------------
+
+// Each full-resolution pixel sits among four half-resolution ones. Blending
+// them by distance alone (bilinearly) would smear occlusion across edges, so
+// each is also weighted by how close its depth is to this pixel's. Where
+// none is close, as on a thin edge whose surface no half-resolution pixel
+// kept, the closest in depth stands in alone.
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void upsampleMain(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= push.width || id.y >= push.height) {
+        return;
+    }
+
+    FrameData* frame = push.frame;
+    const int2 pixel = int2(id.xy);
+    const int2 size = int2(half_size());
+    const Texture2D depth_buffer = Texture2D.Handle(uint2(push.depth, 0));
+    RWTexture2D<float> ao_depth = RWTexture2D<float>.Handle(uint2(push.ao_depth, 0));
+    RWTexture2D<float4> source = RWTexture2D<float4>.Handle(uint2(push.source, 0));
+    RWTexture2D<float4> target = RWTexture2D<float4>.Handle(uint2(push.target, 0));
+
+    const float depth = depth_buffer.Load(int3(pixel, 0)).r;
+    if (depth == 0.0) {
+        target[pixel] = float4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
+    const float here = dot(unproject(frame, float2(pixel) + 0.5, depth), camera_forward(frame));
+
+    // The half-resolution pixel centres around this one, and how far along
+    // between them it is.
+    const float2 position = (float2(pixel) + 0.5) * 0.5 - 0.5;
+    const int2 base = int2(floor(position));
+    const float2 along = position - float2(base);
+
+    float4 sum = 0.0;
+    float total = 0.0;
+    float4 closest = float4(0.0, 0.0, 0.0, 1.0);
+    float closest_difference = 1e30;
+
+    for (int i = 0; i < 4; ++i) {
+        const int2 corner = int2(i & 1, i >> 1);
+        const int2 neighbour = clamp(base + corner, int2(0), size - 1);
+        const float other = ao_depth[neighbour];
+        if (other == 0.0) {
+            continue;
+        }
+
+        const float4 value = source[neighbour];
+        const float2 bilinear = lerp(1.0 - along, along, float2(corner));
+        const float weight = bilinear.x * bilinear.y * depth_weight(here, other);
+        sum += float4(value.xyz * weight, value.w * weight);
+        total += weight;
+
+        if (abs(other - here) < closest_difference) {
+            closest_difference = abs(other - here);
+            closest = value;
+        }
+    }
+
+    if (total < 1e-3) {
+        target[pixel] = closest;
+        return;
+    }
+
+    const float3 bent = dot(sum.xyz, sum.xyz) > 1e-8 ? normalize(sum.xyz) : closest.xyz;
+    target[pixel] = float4(bent, sum.w / total);
 }
 ```
 
@@ -3325,13 +3504,12 @@ struct ScreenSlots {
     std::uint32_t depth = 0;           // sampled, by ambient occlusion
     std::uint32_t normals = 0;         // sampled, by ambient occlusion
     std::uint32_t ao = 0;              // sampled, by the lighting pass
-    std::uint32_t ao_target = 0;       // storage, for the AO pass
-    std::uint32_t ao_blur_target = 0;  // storage, for the AO pass
+    AoTargets ao_targets;              // storage, for the AO pass
     std::uint32_t accum = 0;           // sampled, by the transparency composite
     std::uint32_t reveal = 0;          // sampled, by the transparency composite
 };
 
-constexpr std::uint32_t screen_slot_count = 8;
+constexpr std::uint32_t screen_slot_count = 11;
 
 // Every graphics pipeline a frame uses. The prepass and the lighting pass
 // have one per solid alpha mode, in solid_modes' order; see-through surfaces
@@ -3525,7 +3703,7 @@ void record_frame(
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead
     );
 
-    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_target, draws.screen.ao_blur_target,
+    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_targets,
         AoPushData{.frame = draws.frame, .depth = draws.screen.depth, .normals = draws.screen.normals});
 
     // --- Pass 3: the lighting --------------------------------------------------
@@ -4036,10 +4214,15 @@ int main() {
             .depth = first_screen_slot + 1,
             .normals = first_screen_slot + 2,
             .ao = first_screen_slot + 3,
-            .ao_target = first_screen_slot + 4,
-            .ao_blur_target = first_screen_slot + 5,
-            .accum = first_screen_slot + 6,
-            .reveal = first_screen_slot + 7,
+            .ao_targets = {
+                .ao_depth = first_screen_slot + 4,
+                .ao_normals = first_screen_slot + 5,
+                .ao_raw = first_screen_slot + 6,
+                .ao_blur = first_screen_slot + 7,
+                .ao = first_screen_slot + 8,
+            },
+            .accum = first_screen_slot + 9,
+            .reveal = first_screen_slot + 10,
         };
 
         // The swapchain's images are recreated with it, so their descriptors
@@ -4060,8 +4243,11 @@ int main() {
             write_image_descriptor(device, heaps, screen.depth, whole(swapchain.depth, vk::ImageAspectFlagBits::eDepth));
             write_image_descriptor(device, heaps, screen.normals, whole(swapchain.normals, color));
             write_image_descriptor(device, heaps, screen.ao, whole(swapchain.ao, color));
-            write_image_descriptor(device, heaps, screen.ao_target, whole(swapchain.ao, color), storage);
-            write_image_descriptor(device, heaps, screen.ao_blur_target, whole(swapchain.ao_blur, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_depth, whole(swapchain.ao_depth, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_normals, whole(swapchain.ao_normals, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_raw, whole(swapchain.ao_raw, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_blur, whole(swapchain.ao_blur, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao, whole(swapchain.ao, color), storage);
             write_image_descriptor(device, heaps, screen.accum, whole(swapchain.accum, color));
             write_image_descriptor(device, heaps, screen.reveal, whole(swapchain.reveal, color));
         };

@@ -138,6 +138,10 @@ constexpr vk::Format normal_format = vk::Format::eR16G16Sfloat;
 // Ambient occlusion: the bent normal in RGB and the visibility in A.
 constexpr vk::Format ao_format = vk::Format::eR16G16B16A16Sfloat;
 
+// Ambient occlusion's half-resolution input: each 2 x 2 block's nearest
+// distance in front of the camera. Its normal uses normal_format.
+constexpr vk::Format ao_depth_format = vk::Format::eR32Sfloat;
+
 // Weighted blended transparency's two sums (see mesh.slang): the weighted
 // color and coverage, and the share of the scene that still shows through.
 constexpr vk::Format accum_format = vk::Format::eR16G16B16A16Sfloat;
@@ -164,14 +168,22 @@ struct Swapchain {
     //   depth    the depth prepass writes it; ambient occlusion and the
     //            lighting pass then read it
     //   normals  the prepass's normals, for ambient occlusion
-    //   ao       ambient occlusion, written and blurred by compute shaders
-    //   ao_blur  the blur's halfway point
+    //   ao       ambient occlusion, written by a compute shader, read by the
+    //            lighting pass
     //   accum    see-through surfaces' weighted color and coverage, summed
     //   reveal   how much of the scene still shows through them
     //   hdr      the lit scene, which tone mapping writes to the swapchain image
+    // and, at half the size, rounded up, ambient occlusion's working images:
+    //   ao_depth    each 2 x 2 block's nearest distance in front of the camera
+    //   ao_normals  that surface's normal
+    //   ao_raw      the horizon search's result, and the blur's
+    //   ao_blur     the blur's halfway point
     Image depth;
     Image normals;
     Image ao;
+    Image ao_depth;
+    Image ao_normals;
+    Image ao_raw;
     Image ao_blur;
     Image accum;
     Image reveal;
@@ -265,11 +277,22 @@ Swapchain build(
     swapchain.normals = create_image(device, gpu, swapchain.extent, normal_format,
         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eColor);
 
-    // Written by compute shaders (storage), then read by the lighting pass.
-    for (Image* image : {&swapchain.ao, &swapchain.ao_blur}) {
-        *image = create_image(device, gpu, swapchain.extent, ao_format,
-            vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eColor);
+    // Ambient occlusion works at half resolution, rounded up, and writes its
+    // result at full resolution. Compute shaders write all of them (storage);
+    // the lighting pass samples the full-resolution one.
+    const vk::Extent2D half{(swapchain.extent.width + 1) / 2, (swapchain.extent.height + 1) / 2};
+    swapchain.ao_depth = create_image(device, gpu, half, ao_depth_format,
+        vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor);
+    swapchain.ao_normals = create_image(device, gpu, half, normal_format,
+        vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor);
+
+    for (Image* image : {&swapchain.ao_raw, &swapchain.ao_blur}) {
+        *image = create_image(device, gpu, half, ao_format,
+            vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor);
     }
+
+    swapchain.ao = create_image(device, gpu, swapchain.extent, ao_format,
+        vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eColor);
 
     // Drawn into by the transparency pass, then read by its composite.
     swapchain.accum = create_image(device, gpu, swapchain.extent, accum_format,
@@ -1499,7 +1522,7 @@ void visit_node(
 
 ### How
 - **`solid_mode_count` and `blend_mode`** name the batches: the first two are solid, the third is see-through. A `static_assert` checks that the third is the blended one.
-- **`ScreenSlots`** gains `accum` and `reveal`, sampled: eight slots now.
+- **`ScreenSlots`** gains `accum` and `reveal`, sampled: eleven slots now.
 - **`ScenePipelines`** has one pipeline per solid alpha mode in the prepass and the lighting pass, and one `transparency` pipeline. Plus the sky, the composite and tone mapping.
 - **The lighting pass** draws the opaque and masked batches, then the sky.
 - **The transparency pass** runs only if the scene has see-through draws. Sponza has none, and skipping it saves clearing two images and a full-screen pass.
@@ -1624,13 +1647,12 @@ struct ScreenSlots {
     std::uint32_t depth = 0;           // sampled, by ambient occlusion
     std::uint32_t normals = 0;         // sampled, by ambient occlusion
     std::uint32_t ao = 0;              // sampled, by the lighting pass
-    std::uint32_t ao_target = 0;       // storage, for the AO pass
-    std::uint32_t ao_blur_target = 0;  // storage, for the AO pass
+    AoTargets ao_targets;              // storage, for the AO pass
     std::uint32_t accum = 0;           // sampled, by the transparency composite
     std::uint32_t reveal = 0;          // sampled, by the transparency composite
 };
 
-constexpr std::uint32_t screen_slot_count = 8;
+constexpr std::uint32_t screen_slot_count = 11;
 
 // Every graphics pipeline a frame uses. The prepass and the lighting pass
 // have one per solid alpha mode, in alpha_modes' order; see-through surfaces
@@ -1811,7 +1833,7 @@ void record_frame(
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead
     );
 
-    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_target, draws.screen.ao_blur_target,
+    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_targets,
         AoPushData{.frame = draws.frame, .depth = draws.screen.depth, .normals = draws.screen.normals});
 
     // --- Pass 3: the lighting --------------------------------------------------
@@ -2266,10 +2288,15 @@ int main() {
             .depth = first_screen_slot + 1,
             .normals = first_screen_slot + 2,
             .ao = first_screen_slot + 3,
-            .ao_target = first_screen_slot + 4,
-            .ao_blur_target = first_screen_slot + 5,
-            .accum = first_screen_slot + 6,
-            .reveal = first_screen_slot + 7,
+            .ao_targets = {
+                .ao_depth = first_screen_slot + 4,
+                .ao_normals = first_screen_slot + 5,
+                .ao_raw = first_screen_slot + 6,
+                .ao_blur = first_screen_slot + 7,
+                .ao = first_screen_slot + 8,
+            },
+            .accum = first_screen_slot + 9,
+            .reveal = first_screen_slot + 10,
         };
 
         // The swapchain's images are recreated with it, so their descriptors
@@ -2290,8 +2317,11 @@ int main() {
             write_image_descriptor(device, heaps, screen.depth, whole(swapchain.depth, vk::ImageAspectFlagBits::eDepth));
             write_image_descriptor(device, heaps, screen.normals, whole(swapchain.normals, color));
             write_image_descriptor(device, heaps, screen.ao, whole(swapchain.ao, color));
-            write_image_descriptor(device, heaps, screen.ao_target, whole(swapchain.ao, color), storage);
-            write_image_descriptor(device, heaps, screen.ao_blur_target, whole(swapchain.ao_blur, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_depth, whole(swapchain.ao_depth, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_normals, whole(swapchain.ao_normals, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_raw, whole(swapchain.ao_raw, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_blur, whole(swapchain.ao_blur, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao, whole(swapchain.ao, color), storage);
             write_image_descriptor(device, heaps, screen.accum, whole(swapchain.accum, color));
             write_image_descriptor(device, heaps, screen.reveal, whole(swapchain.reveal, color));
         };

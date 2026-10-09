@@ -515,7 +515,7 @@ struct FrameData {
     std::uint32_t clamp_sampler;        // sampler heap index: trilinear, clamped to the edge
     std::uint32_t specular_mips;        // mip levels of specular_cube: roughness 0 to 1
     float sun_angular_radius;           // radians: half the sun's apparent width
-    std::uint32_t ambient_occlusion;    // resource heap slot: the blurred GTAO image
+    std::uint32_t ambient_occlusion;    // resource heap slot: the GTAO image, full resolution
     std::uint32_t ao_enabled;           // 0: ignore it, to compare
 };
 
@@ -625,16 +625,18 @@ static_assert(sizeof(EnvironmentPushData) == 48);
 static_assert(offsetof(EnvironmentPushData, sun_direction) == 16);
 static_assert(offsetof(EnvironmentPushData, size) == 32);
 
-// The ambient occlusion compute shaders' push data (ao.slang). Each dispatch
-// reads `source` and writes `target`, both storage images, except the GTAO
-// pass, which reads the depth and normals and only writes.
+// The ambient occlusion compute shaders' push data (ao.slang), the same for
+// all four steps. The half-resolution images and `source` and `target` are
+// storage images; each step reads and writes the ones it needs.
 struct AoPushData {
     vk::DeviceAddress frame = 0;   // this frame's FrameData
     std::uint32_t depth = 0;       // resource heap slot: the depth buffer, sampled
     std::uint32_t normals = 0;     // resource heap slot: the prepass's normals, sampled
-    std::uint32_t source = 0;      // resource heap slot: what the blur reads (storage)
+    std::uint32_t ao_depth = 0;    // resource heap slot: half resolution, nearest distance (storage)
+    std::uint32_t ao_normals = 0;  // resource heap slot: half resolution, its normal (storage)
+    std::uint32_t source = 0;      // resource heap slot: what this step reads (storage)
     std::uint32_t target = 0;      // resource heap slot: what this step writes (storage)
-    std::uint32_t width = 0;       // the images' size in pixels
+    std::uint32_t width = 0;       // the full-resolution images' size in pixels
     std::uint32_t height = 0;
     float radius = 0.0f;           // meters: how far around a point occluders are looked for
     std::uint32_t slices = 0;      // directions around the view vector
@@ -642,7 +644,7 @@ struct AoPushData {
     std::uint32_t blur_axis = 0;   // the blur's direction: 0 across, 1 down
 };
 
-static_assert(sizeof(AoPushData) == 48);
+static_assert(sizeof(AoPushData) == 56);
 ```
 
 `game-engine/shaders/shared.slangh`:
@@ -2289,13 +2291,12 @@ struct ScreenSlots {
     std::uint32_t depth = 0;           // sampled, by ambient occlusion
     std::uint32_t normals = 0;         // sampled, by ambient occlusion
     std::uint32_t ao = 0;              // sampled, by the lighting pass
-    std::uint32_t ao_target = 0;       // storage, for the AO pass
-    std::uint32_t ao_blur_target = 0;  // storage, for the AO pass
+    AoTargets ao_targets;              // storage, for the AO pass
     std::uint32_t accum = 0;           // sampled, by the transparency composite
     std::uint32_t reveal = 0;          // sampled, by the transparency composite
 };
 
-constexpr std::uint32_t screen_slot_count = 8;
+constexpr std::uint32_t screen_slot_count = 11;
 
 // Every graphics pipeline a frame uses. The prepass and the lighting pass
 // have one per solid alpha mode, in solid_modes' order; see-through surfaces
@@ -2489,7 +2490,7 @@ void record_frame(
         vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderSampledRead
     );
 
-    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_target, draws.screen.ao_blur_target,
+    record_ambient_occlusion(commands, ambient_occlusion, swapchain, draws.screen.ao_targets,
         AoPushData{.frame = draws.frame, .depth = draws.screen.depth, .normals = draws.screen.normals});
 
     // --- Pass 3: the lighting --------------------------------------------------
@@ -2993,10 +2994,15 @@ int main() {
             .depth = first_screen_slot + 1,
             .normals = first_screen_slot + 2,
             .ao = first_screen_slot + 3,
-            .ao_target = first_screen_slot + 4,
-            .ao_blur_target = first_screen_slot + 5,
-            .accum = first_screen_slot + 6,
-            .reveal = first_screen_slot + 7,
+            .ao_targets = {
+                .ao_depth = first_screen_slot + 4,
+                .ao_normals = first_screen_slot + 5,
+                .ao_raw = first_screen_slot + 6,
+                .ao_blur = first_screen_slot + 7,
+                .ao = first_screen_slot + 8,
+            },
+            .accum = first_screen_slot + 9,
+            .reveal = first_screen_slot + 10,
         };
 
         // The swapchain's images are recreated with it, so their descriptors
@@ -3017,8 +3023,11 @@ int main() {
             write_image_descriptor(device, heaps, screen.depth, whole(swapchain.depth, vk::ImageAspectFlagBits::eDepth));
             write_image_descriptor(device, heaps, screen.normals, whole(swapchain.normals, color));
             write_image_descriptor(device, heaps, screen.ao, whole(swapchain.ao, color));
-            write_image_descriptor(device, heaps, screen.ao_target, whole(swapchain.ao, color), storage);
-            write_image_descriptor(device, heaps, screen.ao_blur_target, whole(swapchain.ao_blur, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_depth, whole(swapchain.ao_depth, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_normals, whole(swapchain.ao_normals, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_raw, whole(swapchain.ao_raw, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao_blur, whole(swapchain.ao_blur, color), storage);
+            write_image_descriptor(device, heaps, screen.ao_targets.ao, whole(swapchain.ao, color), storage);
             write_image_descriptor(device, heaps, screen.accum, whole(swapchain.accum, color));
             write_image_descriptor(device, heaps, screen.reveal, whole(swapchain.reveal, color));
         };
