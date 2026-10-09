@@ -2137,4 +2137,4 @@ Press Enter (option 7) to build in debug with clang and run.
 - **Sponza's plants,** seen from the far end of the courtyard, keep their leaves. Their textures' coverage now holds down the levels: one of them keeps 44% of its texels at 8 × 8 and at 4 × 4, where plain averaging kept 33% and 19%.
 - **No `[validation …]` lines.**
 
-Next, in Chapter 16, occlusion culling: a hierarchical depth buffer from the previous frame lets the cull skip draws hidden behind others, not just those outside the view.
+Next, in Chapter 16, clustered lights: the view cut into a grid of clusters, each lit by only the lights that reach it, so a scene can hold thousands of lights.
